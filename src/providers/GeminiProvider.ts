@@ -13,7 +13,7 @@ export class GeminiProvider implements BaseAIProvider {
       body: JSON.stringify({
         message: prompt,
         overrideProvider: 'gemini',
-        overrideModel: config?.model || 'gemini-flash-latest',
+        overrideModel: config?.model || 'gemini-4-hydrogen',
         temperature: config?.temperature ?? 0.7,
         maxTokens: config?.maxTokens ?? 2048,
         systemPrompt: config?.systemPrompt || DEFAULT_SYSTEM_PROMPT
@@ -30,7 +30,7 @@ export class GeminiProvider implements BaseAIProvider {
     return {
       text: data.reply,
       provider: 'gemini',
-      model: data.model || config?.model || 'gemini-flash-latest',
+      model: data.model || config?.model || 'gemini-4-hydrogen',
       responseTimeMs
     };
   }
@@ -50,7 +50,7 @@ export class GeminiProvider implements BaseAIProvider {
         message: lastMsg,
         conversationHistory: history,
         overrideProvider: 'gemini',
-        overrideModel: config?.model || 'gemini-flash-latest',
+        overrideModel: config?.model || 'gemini-4-hydrogen',
         temperature: config?.temperature ?? 0.7,
         maxTokens: config?.maxTokens ?? 2048,
         systemPrompt: config?.systemPrompt || DEFAULT_SYSTEM_PROMPT
@@ -67,7 +67,7 @@ export class GeminiProvider implements BaseAIProvider {
     return {
       text: data.reply,
       provider: 'gemini',
-      model: data.model || config?.model || 'gemini-flash-latest',
+      model: data.model || config?.model || 'gemini-4-hydrogen',
       responseTimeMs
     };
   }
@@ -80,7 +80,7 @@ export class GeminiProvider implements BaseAIProvider {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           provider: 'gemini',
-          model: config?.model || 'gemini-flash-latest',
+          model: config?.model || 'gemini-4-hydrogen',
           apiKey: config?.apiKey
         })
       });

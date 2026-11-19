@@ -1257,9 +1257,512 @@ export const PLACES_NEAR_HERITAGE: Record<string, PlaceItem[]> = {
         considerations: ['Cuối tuần lượng khách tham quan Tràng An ghé ăn rất đông'],
         dataCoverageNotice: 'Dựa trên phân tích thực khách sau chuyến du ngoạn Tràng An.'
       }
+    },
+    {
+      id: 'place-nb-2',
+        name: 'Chè Sen & Nước Mía Lau Bến Thuyền Tràng An',
+        category: 'cafe',
+        categoryLabel: 'Cà phê & Tráng miệng',
+        address: 'Khu du lịch sinh thái Tràng An, Hoa Lư, Ninh Bình',
+        lat: 20.2542,
+        lng: 105.9368,
+        rating: 4.7,
+        userRatingCount: 1650,
+        priceLevel: 1,
+        priceText: '25.000 - 45.000 VNĐ',
+        openNow: true,
+        openingHoursText: '07:00 - 18:30',
+        photoUrl: 'https://images.unsplash.com/photo-1553909489-cd47e0907980?auto=format&fit=crop&w=600&q=80',
+        googleMapsUri: 'https://maps.google.com/?q=Ben+Thuyen+Trang+An+Ninh+Binh',
+        isDemoData: true,
+        attributionText: 'Thức uống thanh nhiệt sau hành trình đò Tràng An',
+        distanceKm: 0.3,
+        specialties: ['Chè hạt sen long nhãn đầm Vân Long', 'Nước mía lau sả tắc mát lạnh', 'Bánh đa vừng Hoa Lư'],
+        reviewSummary: {
+          foodMention: 'Chè sen thanh mát, hạt sen bở tơi thơm dịu rất hợp giải nhiệt sau 3 tiếng ngồi thuyền.',
+          ambianceMention: 'Ngồi ngay bên bờ sông Sào Khê gió mát lộng, ngắm núi đá vôi.',
+          positiveHighlights: ['Vị trí ngay lối lên bến thuyền Tràng An', 'Giá niêm yết rõ ràng'],
+          considerations: ['Buổi chiều tầm 15h-17h khá đông khách vừa xuống đò'],
+          dataCoverageNotice: 'Dữ liệu tổng hợp từ đánh giá du khách Tràng An.'
+        }
+      }
+    ],
+  'ngu-hanh-son-da-nang': [
+    {
+      id: 'place-dn-nhs-1',
+      name: 'Mì Quảng Bà Mua - Cơ Sở Ngũ Hành Sơn',
+      category: 'local_food',
+      categoryLabel: 'Đặc sản Mì Quảng Đà Nẵng',
+      address: '40 Ngũ Hành Sơn, Phường Mỹ An, Quận Ngũ Hành Sơn, Đà Nẵng',
+      lat: 16.0285,
+      lng: 108.2432,
+      rating: 4.8,
+      userRatingCount: 4120,
+      priceLevel: 1,
+      priceText: '40.000 - 65.000 VNĐ',
+      openNow: true,
+      openingHoursText: '06:30 - 21:30',
+      photoUrl: 'https://images.unsplash.com/photo-1582878826629-29b7ad1cdc43?auto=format&fit=crop&w=600&q=80',
+      googleMapsUri: 'https://maps.google.com/?q=Mi+Quang+Ba+Mua+Ngu+Hanh+Son+Da+Nang',
+      isDemoData: true,
+      attributionText: 'Thương hiệu Mì Quảng trứ danh gần Danh thắng Ngũ Hành Sơn',
+      distanceKm: 0.8,
+      specialties: ['Mì Quảng ếch bếp trang', 'Mì Quảng gà ta trứng non', 'Bánh tráng cuốn thịt heo Đại Lộc', 'Ram cuốn cải'],
+      reviewSummary: {
+        foodMention: 'Nước nhân mì Quảng ếch đậm đà sả nghệ, thịt ếch đồng săn chắc ăn kèm bánh tráng mè nướng giòn rụm và rau sống 9 vị.',
+        ambianceMention: 'Không gian kiến trúc nhà cổ xứ Quảng rộng rãi, sạch sẽ, máy lạnh mát mẻ.',
+        serviceMention: 'Phục vụ nhanh, lên món chỉ sau 5 phút.',
+        pricingMention: 'Giá hợp lý, tô đầy đặn cho du khách nạp năng lượng leo núi Ngũ Hành Sơn.',
+        positiveHighlights: [
+          'Món Mì Quảng ếch đặc trưng được cả khách địa phương và quốc tế khen ngợi',
+          'Nằm ngay trục đường dẫn vào Danh thắng Ngũ Hành Sơn'
+        ],
+        considerations: ['Buổi sáng từ 7h30 - 9h00 rất đông khách đoàn'],
+        dataCoverageNotice: 'Dựa trên phân tích các chủ đề thường gặp từ đánh giá của khách hàng.'
+      }
+    },
+    {
+      id: 'place-dn-nhs-2',
+      name: 'Đặc Sản Trần - Bánh Tráng Thịt Heo Hai Đầu Da',
+      category: 'restaurant',
+      categoryLabel: 'Nhà hàng Đặc sản Đà Nẵng',
+      address: 'Đường Lê Văn Hiến, Quận Ngũ Hành Sơn, Đà Nẵng (Gần cổng Thủy Sơn)',
+      lat: 16.0124,
+      lng: 108.2578,
+      rating: 4.7,
+      userRatingCount: 3290,
+      priceLevel: 2,
+      priceText: '75.000 - 160.000 VNĐ',
+      openNow: true,
+      openingHoursText: '09:00 - 22:00',
+      photoUrl: 'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?auto=format&fit=crop&w=600&q=80',
+      googleMapsUri: 'https://maps.google.com/?q=Dac+San+Tran+Le+Van+Hien+Da+Nang',
+      isDemoData: true,
+      attributionText: 'Đặc sản trứ danh Đà Nẵng gần Ngũ Hành Sơn',
+      distanceKm: 0.6,
+      specialties: ['Bánh tráng cuốn thịt heo hai đầu da', 'Mắm nêm cá cơm nguyên chất', 'Bánh bèo chén miền Trung', 'Chả bò Đà Nẵng'],
+      reviewSummary: {
+        foodMention: 'Thịt heo hấp giữ nguyên độ ngọt tự nhiên với hai đầu mỡ trong veo, cuốn cùng bánh ướt dẻo và mắm nêm dứa thơm lừng.',
+        ambianceMention: 'Nhà hàng lịch sự, sang trọng, phù hợp gia đình và nhóm bạn nghỉ chân sau khi tham quan động Huyền Không.',
+        positiveHighlights: [
+          'Mắm nêm pha chế độc quyền cực kỳ dậy vị',
+          'Đĩa rau sống tươi xanh đa dạng từ rau rừng đến chuối chát, khế chua'
+        ],
+        considerations: ['Khẩu phần khá lớn, đi 2 người gọi 1 phần thịt cuốn và 1 phần mì là vừa no'],
+        dataCoverageNotice: 'Dựa trên phân tích các chủ đề thường gặp từ đánh giá của khách hàng.'
+      }
+    },
+    {
+      id: 'place-dn-nhs-3',
+      name: 'Hải Sản Bé Mặn & Không Gian Cà Phê Biển Non Nước',
+      category: 'restaurant',
+      categoryLabel: 'Nhà hàng Hải sản Biển Đà Nẵng',
+      address: 'Đường Trường Sa - Võ Nguyên Giáp, Ngũ Hành Sơn, Đà Nẵng',
+      lat: 16.0310,
+      lng: 108.2485,
+      rating: 4.6,
+      userRatingCount: 5400,
+      priceLevel: 2,
+      priceText: '120.000 - 300.000 VNĐ',
+      openNow: true,
+      openingHoursText: '09:00 - 23:00',
+      photoUrl: 'https://images.unsplash.com/photo-1625398407796-82650a8c135f?auto=format&fit=crop&w=600&q=80',
+      googleMapsUri: 'https://maps.google.com/?q=Hai+San+Be+Man+Da+Nang',
+      isDemoData: true,
+      attributionText: 'Hải sản tươi sống cung đường biển Mỹ Khê - Ngũ Hành Sơn',
+      distanceKm: 1.4,
+      specialties: ['Cua rang me', 'Hàu nướng mỡ hành', 'Cháo hải sản Đà Nẵng', 'Mực một nắng nướng than'],
+      reviewSummary: {
+        foodMention: 'Hải sản bơi tại bể khách tự chọn và cân tại chỗ, chế biến sốt bơ tỏi và rang me rất đậm đà.',
+        ambianceMention: 'Không gian mở đón gió biển mát rượi ngay đối diện bãi tắm.',
+        positiveHighlights: ['Hải sản tươi sống 100%', 'Chế biến nhanh, giá niêm yết minh bạch theo thời giá'],
+        considerations: ['Buổi tối từ 18h30 rất nhộn nhịp'],
+        dataCoverageNotice: 'Dựa trên phân tích các chủ đề thường gặp từ đánh giá của khách hàng.'
+      }
+    }
+  ],
+  'ma-nhai-ngu-hanh-son': [
+    {
+      id: 'place-dn-mn-1',
+      name: 'Trà Quán & Chè Cung Đình Chân Núi Thủy Sơn',
+      category: 'cafe',
+      categoryLabel: 'Cà phê & Trà Thư pháp',
+      address: '81 Huyền Trân Công Chúa, Hòa Hải, Ngũ Hành Sơn, Đà Nẵng (Sát thang máy Thủy Sơn)',
+      lat: 16.0042,
+      lng: 108.2634,
+      rating: 4.8,
+      userRatingCount: 1580,
+      priceLevel: 1,
+      priceText: '25.000 - 50.000 VNĐ',
+      openNow: true,
+      openingHoursText: '06:30 - 19:00',
+      photoUrl: 'https://images.unsplash.com/photo-1509042239860-f550ce710b93?auto=format&fit=crop&w=600&q=80',
+      googleMapsUri: 'https://maps.google.com/?q=81+Huyen+Tran+Cong+Chua+Ngu+Hanh+Son+Da+Nang',
+      isDemoData: true,
+      attributionText: 'Điểm dừng chân thưởng trà ngay dưới chân động Hoa Nghiêm & Huyền Không',
+      distanceKm: 0.2,
+      specialties: ['Trà sen đá tuyết Non Nước', 'Chè sương sa hạt lựu Đà Nẵng', 'Cà phê muối dừa nướng'],
+      reviewSummary: {
+        foodMention: 'Ly trà sen thơm ngát và bát chè sương sa hạt lựu mát lạnh giải khát tức thì sau khi chiêm ngưỡng văn bia Ma Nhai.',
+        ambianceMention: 'Quán trang trí tiểu cảnh đá cẩm thạch Non Nước và tranh thư pháp Ma Nhai.',
+        positiveHighlights: ['Ngay cổng ra vào Ngũ Hành Sơn chỉ 200m', 'Chủ quán am hiểu lịch sử địa phương'],
+        considerations: ['Quán đóng cửa lúc 19h00 theo giờ đóng cửa khu danh thắng'],
+        dataCoverageNotice: 'Dựa trên đánh giá của du khách khám phá Di sản Tư liệu Ma Nhai.'
+      }
+    },
+    {
+      id: 'place-dn-mn-2',
+      name: 'Mì Quảng Quê Xưa Non Nước',
+      category: 'local_food',
+      categoryLabel: 'Quán ăn Đặc sản Địa phương',
+      address: '112 Huyền Trân Công Chúa, Quận Ngũ Hành Sơn, Đà Nẵng',
+      lat: 16.0055,
+      lng: 108.2618,
+      rating: 4.7,
+      userRatingCount: 2140,
+      priceLevel: 1,
+      priceText: '35.000 - 55.000 VNĐ',
+      openNow: true,
+      openingHoursText: '06:00 - 20:30',
+      photoUrl: 'https://images.unsplash.com/photo-1582878826629-29b7ad1cdc43?auto=format&fit=crop&w=600&q=80',
+      googleMapsUri: 'https://maps.google.com/?q=Mi+Quang+Huyen+Tran+Cong+Chua+Da+Nang',
+      isDemoData: true,
+      attributionText: 'Quán ăn truyền thống làng đá Non Nước',
+      distanceKm: 0.35,
+      specialties: ['Mì Quảng cá lóc', 'Mì Quảng tôm thịt trứng cút', 'Bánh đập hến xào'],
+      reviewSummary: {
+        foodMention: 'Mì Quảng cá lóc thấm gia vị, bánh đập giòn chấm mắm cái cá cơm cay nồng chuẩn vị Quảng.',
+        ambianceMention: 'Mộc mạc, thoáng mát dưới tán cây bàng cổ thụ.',
+        positiveHighlights: ['Đi bộ 3 phút từ cổng khu danh thắng', 'Giá bình dân'],
+        considerations: ['Món bánh đập hến xào thường hết sớm vào buổi chiều'],
+        dataCoverageNotice: 'Dựa trên đánh giá thực khách địa phương.'
+      }
+    }
+  ],
+  'bien-my-khe-da-nang': [
+    {
+      id: 'place-dn-mk-1',
+      name: 'Hải Sản Năm Đảnh & Phố Biển Mỹ Khê',
+      category: 'restaurant',
+      categoryLabel: 'Nhà hàng Hải sản Bình dân Nổi tiếng',
+      address: 'Đường Võ Nguyên Giáp / Trần Quang Khải, Sơn Trà - Mỹ Khê, Đà Nẵng',
+      lat: 16.0615,
+      lng: 108.2465,
+      rating: 4.7,
+      userRatingCount: 6320,
+      priceLevel: 2,
+      priceText: '60.000 - 150.000 VNĐ / món',
+      openNow: true,
+      openingHoursText: '10:00 - 22:00',
+      photoUrl: 'https://images.unsplash.com/photo-1625398407796-82650a8c135f?auto=format&fit=crop&w=600&q=80',
+      googleMapsUri: 'https://maps.google.com/?q=Hai+San+Nam+Danh+Da+Nang',
+      isDemoData: true,
+      attributionText: 'Thiên đường hải sản tươi ngon bên bờ biển Mỹ Khê',
+      distanceKm: 0.5,
+      specialties: ['Chip chip hấp sả ớt', 'Bạch tuộc nướng sa tế', 'Ốc hương xào bơ tỏi chấm bánh mì', 'Lẩu hải sản chua cay'],
+      reviewSummary: {
+        foodMention: 'Các món ốc, sò điệp, bạch tuộc sốt bơ tỏi và me chua ngọt cực kỳ bắt vị, đồng giá bình dân.',
+        ambianceMention: 'Không gian dân dã, sôi động, rất hợp đi nhóm bạn và gia đình sau khi tắm biển Mỹ Khê.',
+        positiveHighlights: ['Giá rẻ bất ngờ so với độ tươi ngon của hải sản', 'Nước sốt chấm bánh mì thần thánh'],
+        considerations: ['Nên đi trước 17h30 để chọn bàn đẹp không phải chờ'],
+        dataCoverageNotice: 'Dựa trên hơn 6.000 lượt đánh giá của du khách đến Đà Nẵng.'
+      }
+    },
+    {
+      id: 'place-dn-mk-2',
+      name: 'Bánh Xèo Bà Dưỡng & Nem Lụi Đà Nẵng',
+      category: 'local_food',
+      categoryLabel: 'Đặc sản Bánh xèo Miền Trung',
+      address: 'K280/23 Hoàng Diệu (Kết nối nhanh từ cầu Rồng - Biển Mỹ Khê), Đà Nẵng',
+      lat: 16.0582,
+      lng: 108.2215,
+      rating: 4.7,
+      userRatingCount: 7850,
+      priceLevel: 1,
+      priceText: '50.000 - 100.000 VNĐ',
+      openNow: true,
+      openingHoursText: '09:30 - 21:30',
+      photoUrl: 'https://images.unsplash.com/photo-1626132647523-66f5bf380027?auto=format&fit=crop&w=600&q=80',
+      googleMapsUri: 'https://maps.google.com/?q=Banh+Xeo+Ba+Duong+Da+Nang',
+      isDemoData: true,
+      attributionText: 'Quán bánh xèo hơn 30 năm tuổi nổi tiếng nhất Đà Nẵng',
+      distanceKm: 1.9,
+      specialties: ['Bánh xèo tôm nhảy giòn rụm', 'Nước tương gan đậu phộng gia truyền', 'Nem lụi nướng than hoa'],
+      reviewSummary: {
+        foodMention: 'Bánh xèo đổ nóng giòn tan, nhân tôm tươi và thịt bò mềm, chấm cùng bát nước lèo gan đậu phộng béo ngậy độc nhất vô nhị.',
+        ambianceMention: 'Khu ẩm thực tấp nập, bếp đổ bánh xèo đỏ lửa liên tục rất bắt mắt.',
+        positiveHighlights: ['Nước chấm tương đậu phộng gan béo thơm khó quên', 'Nem lụi nướng thơm phức'],
+        considerations: ['Quán rất đông khách du lịch vào buổi tối'],
+        dataCoverageNotice: 'Dựa trên phân tích các chủ đề thường gặp từ đánh giá của khách hàng.'
+      }
     }
   ]
 };
+
+interface ProvinceCulinaryTemplate {
+  restaurantName: string;
+  restaurantSpecialties: string[];
+  localFoodName: string;
+  localFoodSpecialties: string[];
+  cafeName: string;
+  cafeSpecialties: string[];
+}
+
+const PROVINCE_CULINARY_TEMPLATES: Record<string, ProvinceCulinaryTemplate> = {
+  'Đà Nẵng': {
+    restaurantName: 'Nhà hàng Đặc Sản Trần - Bánh Tráng Thịt Heo Hai Đầu Da',
+    restaurantSpecialties: ['Bánh tráng cuốn thịt heo hai đầu da', 'Mắm nêm cá cơm nguyên chất', 'Chả bò Đà Nẵng'],
+    localFoodName: 'Mì Quảng Bà Mua & Bánh Xèo Tôm Nhảy Đà Nẵng',
+    localFoodSpecialties: ['Mì Quảng ếch bếp trang', 'Mì Quảng gà ta', 'Bánh xèo nem lụi sốt tương đậu phộng'],
+    cafeName: 'Cà Phê Dừa Nướng & Chè Xoa Xoa Hạt Lựu Đà Thành',
+    cafeSpecialties: ['Cà phê cốt dừa nướng giòn', 'Chè xoa xoa hạt lựu mát lạnh', 'Trà sâm dứa Đà Nẵng']
+  },
+  'Hà Nội': {
+    restaurantName: 'Chả Cá Lã Vọng & Bún Chả Hương Liên Phố Cổ',
+    restaurantSpecialties: ['Chả cá lăng nướng nghệ thì là', 'Bún chả than hoa Hà Nội', 'Nem cua bể vuông giòn'],
+    localFoodName: 'Phở Bò Gia Truyền Bát Đàn & Bánh Cuốn Thanh Trì',
+    localFoodSpecialties: ['Phở bò tái nạm nước trong', 'Quẩy nóng giòn', 'Bánh cuốn nhân thịt nấm hương'],
+    cafeName: 'Cà Phê Giảng - Cà Phê Trứng & Cốm Làng Vòng',
+    cafeSpecialties: ['Cà phê trứng đánh bông truyền thống 1946', 'Trà sen Hồ Tây', 'Xôi cốm hạt sen']
+  },
+  'Huế': {
+    restaurantName: 'Nhà hàng Bếp Khói Cố Đô - Ẩm Thực Cung Đình Huế',
+    restaurantSpecialties: ['Bún bò Huế chuẩn vị sả ruốc', 'Cơm hến Cồn Hến', 'Nem lụi nướng sả'],
+    localFoodName: 'Quán Bánh Bèo Nậm Lọc Bà Đỏ & Bánh Khoái Thượng Tứ',
+    localFoodSpecialties: ['Mẹt bánh bèo chén tôm cháy', 'Bánh bột lọc gói lá chuối', 'Bánh khoái chấm nước lèo'],
+    cafeName: 'Cà Phê Muối Xứ Huế & Chè Hẻm Cung Đình 20 Món',
+    cafeSpecialties: ['Cà phê kem muối nguyên bản', 'Chè bột lọc heo quay', 'Chè hạt sen bọc nhãn lồng']
+  },
+  'TP. Hồ Chí Minh': {
+    restaurantName: 'Nhà hàng Cơm Niêu Sài Gòn & Cơm Tấm Sườn Bì Chả',
+    restaurantSpecialties: ['Cơm đập niêu đất cá kho tộ', 'Cơm tấm sườn nướng mật ong', 'Lẩu mắm Nam Bộ'],
+    localFoodName: 'Hủ Tiếu Nam Vang Nhân Quán & Bánh Mì Huỳnh Hoa',
+    localFoodSpecialties: ['Hủ tiếu khô sốt gia truyền', 'Bánh mì đặc ruột 12 lớp nhân', 'Gỏi cuốn tôm thịt tương đen'],
+    cafeName: 'Cà Phê Vợt Vỉa Hè & Đỗ Phủ Biệt Động Sài Gòn',
+    cafeSpecialties: ['Cà phê sữa đá pha vợt cổ điển', 'Bạc xỉu nóng Sài Gòn xưa', 'Trà mãng cầu tươi']
+  },
+  'Quảng Ninh': {
+    restaurantName: 'Nhà hàng Hải Sản Hồng Hạnh & Chả Mực Giã Tay Hạ Long',
+    restaurantSpecialties: ['Chả mực giã tay Hạ Long vàng ruộm', 'Cù kỳ hấp sả', 'Sam biển xào chua ngọt', 'Ngán nướng mỡ hành'],
+    localFoodName: 'Bánh Cuốn Chả Mực Bà Ngân & Bún Bề Bề Hạ Long',
+    localFoodSpecialties: ['Bánh cuốn nóng ăn kèm chả mực giã tay', 'Bún bề bề tôm nõn tươi ngọt'],
+    cafeName: 'Sữa Chua Trân Châu Hạ Long & Cà Phê Đồi Mặt Trời',
+    cafeSpecialties: ['Sữa chua dẻo trân châu cốt dừa ấm', 'Trà cúc mật ong Yên Tử']
+  },
+  'Ninh Bình': {
+    restaurantName: 'Nhà hàng Thăng Long - Đặc Sản Dê Núi Cơm Cháy Hoa Lư',
+    restaurantSpecialties: ['Dê núi tái chanh lá sung', 'Cơm cháy sốt tim cật', 'Dê ủ trấu tương gừng'],
+    localFoodName: 'Miến Lươn Đồng & Ốc Núi Luộc Sả Cố Đô',
+    localFoodSpecialties: ['Miến lươn giòn nước dùng đậm đà', 'Ốc núi đá vôi hấp gừng sả', 'Gỏi cá nhệch Kim Sơn'],
+    cafeName: 'Trà Sen Đầm Vân Long & Chè Long Nhãn Tràng An',
+    cafeSpecialties: ['Chè hạt sen long nhãn', 'Nước mía lau sả tắc', 'Trà thảo mộc Hoa Lư']
+  },
+  'Cần Thơ': {
+    restaurantName: 'Nhà hàng Lẩu Mắm Dạ Lý &Ẩm Thực Miệt Vườn Cần Thơ',
+    restaurantSpecialties: ['Lẩu mắm cá linh bông điên điển', 'Cá lóc nướng trui cuốn lá sen non', 'Ốc nướng tiêu xanh'],
+    localFoodName: 'Bánh Cống Cô Út & Hủ Tiếu Thuyền Chợ Nổi Cái Răng',
+    localFoodSpecialties: ['Bánh cống tôm đậu xanh giòn rụm', 'Bún riêu cua đồng trên ghe', 'Bánh tét lá cẩm Cần Thơ'],
+    cafeName: 'Cà Phê Ghe Gió Nổi & Chè Bưởi Ninh Kiều',
+    cafeSpecialties: ['Cà phê sữa đá pha vợt trên ghe', 'Chè bưởi cốt dừa giòn sần sật', 'Dừa tươi ba nhát']
+  },
+  'Khánh Hòa': {
+    restaurantName: 'Nem Nướng Đặng Văn Quyên & Hải Sản Làng Chài Nha Trang',
+    restaurantSpecialties: ['Nem nướng Ninh Hòa cuốn bánh tráng giòn', 'Tôm hùm nướng phô mai', 'Gỏi cá mai Nha Trang'],
+    localFoodName: 'Bún Cá Sứa Năm Beo & Bánh Căn Mực Tươi Tháp Bà',
+    localFoodSpecialties: ['Bún chả cá sứa giòn sần sật', 'Bánh căn hải sản chấm mắm nêm xoài băm'],
+    cafeName: 'Yến Sào Chưng Đường Phèn & Cà Phê Gió Biển Trần Phú',
+    cafeSpecialties: ['Chè yến sào hạt sen Khánh Hòa', 'Cà phê kem dừa nhìn ra vịnh biển']
+  },
+  'Lâm Đồng': {
+    restaurantName: 'Lẩu Gà Lá É Tao Ngộ & Nướng Ngói Cu Đức Đà Lạt',
+    restaurantSpecialties: ['Lẩu gà lá é măng tươi cay the', 'Thịt nướng ngói đỏ cao nguyên', 'Atiso hầm giò heo'],
+    localFoodName: 'Bánh Căn Lệ & Bánh Ướt Lòng Gà Trang Đà Lạt',
+    localFoodSpecialties: ['Bánh ướt lòng gà trứng non', 'Bánh căn trứng cút chấm xíu mại nóng', 'Bánh tráng nướng Đà Lạt'],
+    cafeName: 'Tiệm Cà Phê Túi Mơ To & Sữa Đậu Nành Nóng Phố Núi',
+    cafeSpecialties: ['Cà phê Arabica Cầu Đất rang mộc', 'Sữa đậu nành nóng kèm bánh sừng trâu', 'Trà hoa Atiso đỏ']
+  },
+  'Đắk Lắk': {
+    restaurantName: 'Gà Nướng Bản Đôn & Cơm Lam Đại Ngàn Buôn Ma Thuột',
+    restaurantSpecialties: ['Gà bản nướng kẹp tre chấm muối kiến vàng', 'Cơm lam ống nứa dẻo thơm', 'Cá lăng sông Sêrêpốk'],
+    localFoodName: 'Bún Đỏ Buôn Ma Thuột & Bánh Ướt Thịt Nướng Đĩa Chồng',
+    localFoodSpecialties: ['Bún đỏ gạch cua trứng cút', 'Bánh ướt chồng đĩa cuốn xoài chua thịt nướng'],
+    cafeName: 'Làng Cà Phê Trung Nguyên & Kem Bơ Sầu Riêng Cô Liên',
+    cafeSpecialties: ['Cà phê chồn & Robusta Buôn Ma Thuột nguyên bản', 'Kem bơ sáp Đắk Lắk mịn béo']
+  },
+  'Lào Cai': {
+    restaurantName: 'Lẩu Cá Tầm Cá Hồi Vân Sam & Thắng Cố A Quỳnh Sapa',
+    restaurantSpecialties: ['Lẩu cá tầm Sapa măng chua', 'Gỏi cá hồi vân Tây Bắc', 'Thắng cố ngựa Bắc Hà'],
+    localFoodName: 'Đồ Nướng Than Hoa Phố Cầu Mây & Cơm Lam Thịt Khâu Nhục',
+    localFoodSpecialties: ['Thịt lợn bản cuốn cải mèo nướng', 'Cơm lam nướng ống tre', 'Xôi bảy màu Mường Khương'],
+    cafeName: 'Cà Phê Săn Mây Đỉnh Đèo & Trà Táo Mèo Hoàng Liên',
+    cafeSpecialties: ['Trà táo mèo mật ong rừng nóng', 'Cacao nóng ngắm thung lũng Mường Hoa']
+  }
+};
+
+/**
+ * Trả về danh sách địa điểm ăn uống, quán ăn, cà phê gần một di sản cụ thể.
+ * Nếu di sản chưa có danh sách riêng trong PLACES_NEAR_HERITAGE, tự động tạo danh sách
+ * quán ăn đặc sản chuẩn xác theo Tỉnh/Thành phố và tọa độ thực tế của di sản đó.
+ */
+export function getPlacesForHeritage(
+  heritageId: string,
+  customMap?: Record<string, PlaceItem[]>
+): PlaceItem[] {
+  if (customMap && Array.isArray(customMap[heritageId]) && customMap[heritageId].length > 0) {
+    return customMap[heritageId];
+  }
+  if (Array.isArray(PLACES_NEAR_HERITAGE[heritageId]) && PLACES_NEAR_HERITAGE[heritageId].length > 0) {
+    return PLACES_NEAR_HERITAGE[heritageId];
+  }
+
+  const heritage = HERITAGE_DATABASE.find((h) => h.id === heritageId);
+  if (!heritage) {
+    return PLACES_NEAR_HERITAGE['ngu-hanh-son-da-nang'] || PLACES_NEAR_HERITAGE['dai-noi-hue'] || [];
+  }
+
+  const province = heritage.province || 'Việt Nam';
+  // Kiểm tra nếu có di sản cùng tỉnh đã có dữ liệu trong PLACES_NEAR_HERITAGE
+  const sameProvinceHeritage = HERITAGE_DATABASE.find(
+    (h) =>
+      h.province === province &&
+      ((customMap && customMap[h.id]?.length) || PLACES_NEAR_HERITAGE[h.id]?.length)
+  );
+  if (sameProvinceHeritage) {
+    const basePlaces =
+      (customMap && customMap[sameProvinceHeritage.id]) ||
+      PLACES_NEAR_HERITAGE[sameProvinceHeritage.id] ||
+      [];
+    if (basePlaces.length > 0) {
+      return basePlaces.map((p, idx) => ({
+        ...p,
+        id: `${heritage.id}-place-${idx + 1}`,
+        attributionText: `Gợi ý ẩm thực đặc sản gần ${heritage.name} (${province})`,
+      }));
+    }
+  }
+
+  const tpl = PROVINCE_CULINARY_TEMPLATES[province] || {
+    restaurantName: `Nhà hàng Đặc Sản Bản Địa ${province} (Gần ${heritage.name})`,
+    restaurantSpecialties: [
+      `Mẹt đặc sản truyền thống ${province}`,
+      'Gà đồi nướng mật ong & Cơm niêu',
+      'Lẩu canh chua đặc sản địa phương',
+    ],
+    localFoodName: `Quán Ăn Gia Truyền & Bún Đặc Sản ${province}`,
+    localFoodSpecialties: [
+      `Bún/Bánh đặc sản gia truyền ${province}`,
+      'Bánh dân gian truyền thống địa phương',
+      'Nem chả cuốn rau thơm bản địa',
+    ],
+    cafeName: `Không Gian Trà & Cà Phê Di Sản ${heritage.name}`,
+    cafeSpecialties: [
+      'Cà phê phin truyền thống Việt Nam',
+      `Trà thảo mộc & Chè đặc sản ${province}`,
+      'Nước ép trái cây tươi theo mùa',
+    ],
+  };
+
+  const baseLat = heritage.lat || 16.0471;
+  const baseLng = heritage.lng || 108.2068;
+
+  return [
+    {
+      id: `${heritage.id}-gen-1`,
+      name: tpl.restaurantName,
+      category: 'restaurant',
+      categoryLabel: `Nhà hàng Đặc sản ${province}`,
+      address: `Khu vực trung tâm gần ${heritage.name}, ${province} (Cách di sản 450m)`,
+      lat: Number((baseLat + 0.0032).toFixed(4)),
+      lng: Number((baseLng + 0.0028).toFixed(4)),
+      rating: 4.8,
+      userRatingCount: 1840,
+      priceLevel: 2,
+      priceText: '60.000 - 180.000 VNĐ',
+      openNow: true,
+      openingHoursText: '08:00 - 22:00',
+      photoUrl: 'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?auto=format&fit=crop&w=600&q=80',
+      googleMapsUri: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+        `${tpl.restaurantName} ${heritage.name} ${province}`
+      )}`,
+      isDemoData: true,
+      attributionText: `Đề xuất bởi HDV 3D gần ${heritage.name} (${province})`,
+      distanceKm: 0.45,
+      specialties: tpl.restaurantSpecialties,
+      reviewSummary: {
+        foodMention: `Các món đặc sản ${province} chế biến từ nguyên liệu tươi ngon trong ngày, hương vị đậm đà truyền thống.`,
+        ambianceMention: `Không gian thoáng mát, sạch sẽ, thuận tiện di chuyển ngay sau khi tham quan ${heritage.name}.`,
+        serviceMention: 'Nhân viên thân thiện, nhiệt tình giới thiệu cách thưởng thức món ăn địa phương.',
+        pricingMention: 'Giá cả niêm yết rõ ràng, hợp lý cho cả khách lẻ và gia đình.',
+        positiveHighlights: [
+          `Vị trí rất gần ${heritage.name} (chỉ khoảng 450m)`,
+          `Thực đơn hội tụ trọn vẹn tinh hoa ẩm thực ${province}`,
+        ],
+        considerations: ['Giờ cao điểm buổi trưa và tối cuối tuần khá đông khách tham quan ghé ăn'],
+        dataCoverageNotice: 'Tổng hợp từ đánh giá thực khách và gợi ý của Hướng dẫn viên 3D.',
+      },
+    },
+    {
+      id: `${heritage.id}-gen-2`,
+      name: tpl.localFoodName,
+      category: 'local_food',
+      categoryLabel: 'Quán ăn Đặc sản Bản địa',
+      address: `Tuyến phố ẩm thực quanh ${heritage.name}, ${province} (Cách di sản 750m)`,
+      lat: Number((baseLat - 0.0041).toFixed(4)),
+      lng: Number((baseLng + 0.0035).toFixed(4)),
+      rating: 4.7,
+      userRatingCount: 2490,
+      priceLevel: 1,
+      priceText: '35.000 - 65.000 VNĐ',
+      openNow: true,
+      openingHoursText: '06:30 - 21:00',
+      photoUrl: 'https://images.unsplash.com/photo-1582878826629-29b7ad1cdc43?auto=format&fit=crop&w=600&q=80',
+      googleMapsUri: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+        `${tpl.localFoodName} ${province}`
+      )}`,
+      isDemoData: true,
+      attributionText: `Quán ăn lâu năm được người dân ${province} yêu thích`,
+      distanceKm: 0.75,
+      specialties: tpl.localFoodSpecialties,
+      reviewSummary: {
+        foodMention: 'Hương vị mộc mạc chuẩn gốc bản địa, nước dùng và nước chấm pha theo bí quyết gia truyền lâu năm.',
+        ambianceMention: 'Quán ăn bình dân gần gũi, luôn tấp nập người dân địa phương và du khách.',
+        positiveHighlights: ['Mức giá bình dân, phần ăn đầy đặn', 'Lên món nhanh chóng'],
+        considerations: ['Một số món đặc sản buổi sáng có thể hết sớm'],
+        dataCoverageNotice: 'Tổng hợp từ đánh giá thực khách và gợi ý của Hướng dẫn viên 3D.',
+      },
+    },
+    {
+      id: `${heritage.id}-gen-3`,
+      name: tpl.cafeName,
+      category: 'cafe',
+      categoryLabel: 'Cà phê & Thức uống Giải khát',
+      address: `Gần lối vào ${heritage.name}, ${province} (Cách di sản 300m)`,
+      lat: Number((baseLat + 0.0018).toFixed(4)),
+      lng: Number((baseLng - 0.0022).toFixed(4)),
+      rating: 4.8,
+      userRatingCount: 1320,
+      priceLevel: 1,
+      priceText: '25.000 - 55.000 VNĐ',
+      openNow: true,
+      openingHoursText: '06:30 - 22:30',
+      photoUrl: 'https://images.unsplash.com/photo-1509042239860-f550ce710b93?auto=format&fit=crop&w=600&q=80',
+      googleMapsUri: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+        `${tpl.cafeName} ${province}`
+      )}`,
+      isDemoData: true,
+      attributionText: `Điểm dừng chân nghỉ ngơi lý tưởng cạnh ${heritage.name}`,
+      distanceKm: 0.3,
+      specialties: tpl.cafeSpecialties,
+      reviewSummary: {
+        foodMention: 'Đồ uống thanh mát, cà phê đậm hương và các món chè tráng miệng giải nhiệt tuyệt vời.',
+        ambianceMention: 'Không gian nhiều cây xanh, góc nhìn đẹp để nghỉ chân và chụp ảnh kỷ niệm.',
+        positiveHighlights: ['Cách di sản chỉ vài phút đi bộ', 'Có máy lạnh và khu sân vườn thoáng đãng'],
+        considerations: ['Cuối tuần nhiều nhóm bạn trẻ ghé chụp ảnh'],
+        dataCoverageNotice: 'Tổng hợp từ đánh giá thực khách và gợi ý của Hướng dẫn viên 3D.',
+      },
+    },
+  ];
+}
 
 export const TRADITIONAL_CRAFTS: TraditionalCraftVillage[] = [
   {

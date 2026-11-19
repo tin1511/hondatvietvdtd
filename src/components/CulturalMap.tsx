@@ -23,9 +23,12 @@ import {
   ListFilter,
   Edit3,
   Layers,
-  CheckCircle2
+  CheckCircle2,
+  Navigation,
+  Star,
+  ArrowLeft
 } from 'lucide-react';
-import { HeritageItem, UserProfile, UserLocation } from '../types';
+import { HeritageItem, UserProfile, UserLocation, PlaceItem } from '../types';
 import { storageService } from '../services/storageService';
 import { handleImageError, getSafeHeritageImageUrl } from '../utils/imageUtils';
 import { geolocationService, calculateDistanceKm } from '../services/geolocationService';
@@ -36,12 +39,22 @@ import {
 } from '../data/administrativeUnits';
 import { languageService } from '../services/languageService';
 import { HeritageEditModal } from './HeritageEditModal';
-import { getProvinceIntroText, getHeritageIntroText } from '../data/guideIntroData';
+import { getProvinceIntroText, getHeritageIntroText, getFoodRecommendationIntroText } from '../data/guideIntroData';
+import { getPlacesForHeritage } from '../data/vietnamHeritageData';
 import {
+  guideVoiceService,
   triggerGuideNarration,
   notifyMapSheetState,
   notifyMapInteractionActive
 } from '../services/guideVoiceService';
+import {
+  fetchRoadRoute,
+  buildRouteVoiceNarration,
+  RoadRouteResult,
+  TravelModeType,
+  MapRouteRequestPayload,
+  MAP_OPEN_ROUTE_EVENT
+} from '../services/routeNavigationService';
 
 /**
  * ============================================================================
@@ -53,7 +66,7 @@ export const MAP_TUNABLE_PARAMS = {
   ZOOM_INITIAL_MOBILE: 5.5,
   ZOOM_INITIAL_DESKTOP: 6.0,
   ZOOM_MIN: 5.0,
-  ZOOM_MAX: 18.0,
+  ZOOM_MAX: 19.0,
   ZOOM_CLUSTER_MAX: 7.3,      // Dưới mức này: gom cụm (cluster) vùng dày đặc (ĐB Bắc Bộ, TP.HCM & lân cận)
   ZOOM_LOD_MEDIUM: 6.8,       // Từ 6.8 đến < 8.2: hiện tên rút gọn cho tỉnh nhiều di sản (nếu không va chạm)
   ZOOM_LOD_FULL: 8.2,         // Từ 8.2 trở lên: hiện tên đầy đủ của tỉnh + tách điểm di sản chi tiết
@@ -86,9 +99,9 @@ export const MAP_TUNABLE_PARAMS = {
   SELECTED_BORDER_WEIGHT: 2.6,
 
   // 4. Chiều Cao Bottom Sheet 3 Trạng Thái trên Mobile
-  SHEET_COLLAPSED_PX: 76,     // Thu nhỏ: chỉ tay nắm + tên tỉnh/vùng đang chọn (px)
-  SHEET_HALF_DVH: 48,         // Nửa màn hình: danh sách di sản của tỉnh (% dvh)
-  SHEET_FULL_DVH: 86,         // Toàn màn hình: chi tiết di sản (% dvh)
+  SHEET_COLLAPSED_PX: 72,     // Thu nhỏ: chỉ tay nắm + tên tỉnh/vùng đang chọn (px)
+  SHEET_HALF_DVH: 52,         // Nửa màn hình: danh sách di sản của tỉnh (% chiều cao khung map)
+  SHEET_FULL_DVH: 94,         // Toàn màn hình: chi tiết di sản (% chiều cao khung map)
 
   // 5. Hiệu năng & Debounce
   VIEWPORT_DEBOUNCE_MS: 80,   // Thời gian debounce khi kéo/zoom bản đồ (ms)
@@ -108,6 +121,8 @@ interface CulturalMapProps {
   onNavigateToStory: (heritageName: string, history?: string, period?: string) => void;
   onNavigateToFood: (heritageId: string) => void;
   onSelectHeritage?: (heritage: HeritageItem) => void;
+  initialRouteRequest?: MapRouteRequestPayload | null;
+  onClearRouteRequest?: () => void;
 }
 
 interface ProvinceProperties {
@@ -392,25 +407,40 @@ const VIETNAM_CENTER: L.LatLngExpression = [16.0, 107.8];
 
 const TILE_PROVIDERS: Record<
   'satellite' | 'topo' | 'streets',
-  { name: string; url: string; attribution: string; maxZoom: number }
+  {
+    name: string;
+    url: string;
+    fallbackUrl?: string;
+    subdomains?: string[];
+    attribution: string;
+    maxZoom: number;
+    maxNativeZoom: number;
+  }
 > = {
   satellite: {
     name: 'Vệ Tinh',
     url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-    attribution: '&copy; Esri',
-    maxZoom: 18
+    fallbackUrl: 'https://mt{s}.google.com/vt/lyrs=y&hl=vi&x={x}&y={y}&z={z}',
+    subdomains: ['0', '1', '2', '3'],
+    attribution: '&copy; Esri / Google',
+    maxZoom: 19,
+    maxNativeZoom: 18
   },
   topo: {
     name: 'Địa Hình',
     url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',
     attribution: '&copy; Esri',
-    maxZoom: 18
+    maxZoom: 19,
+    maxNativeZoom: 18
   },
   streets: {
-    name: 'Giao Thông',
-    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
-    attribution: '&copy; Esri',
-    maxZoom: 18
+    name: 'Đường Phố',
+    url: 'https://tile.openstreetmap.de/{z}/{x}/{y}.png',
+    fallbackUrl:
+      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
+    attribution: '&copy; OpenStreetMap / Esri World Street Map',
+    maxZoom: 19,
+    maxNativeZoom: 18
   }
 };
 
@@ -558,7 +588,9 @@ export const CulturalMap: React.FC<CulturalMapProps> = React.memo(({
   embedded = false,
   onNavigateToStory,
   onNavigateToFood,
-  onSelectHeritage
+  onSelectHeritage,
+  initialRouteRequest,
+  onClearRouteRequest
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
@@ -567,6 +599,8 @@ export const CulturalMap: React.FC<CulturalMapProps> = React.memo(({
   const seaWatermarksLayerRef = useRef<L.LayerGroup | null>(null);
   const sovereigntyLayerRef = useRef<L.LayerGroup | null>(null);
   const markersLayerRef = useRef<L.LayerGroup | null>(null);
+  const routeLayerRef = useRef<L.LayerGroup | null>(null);
+  const hasInitialFocusRef = useRef<boolean>(false);
   const rafIdRef = useRef<number | null>(null);
   const debounceTimerRef = useRef<number | null>(null);
 
@@ -620,21 +654,6 @@ export const CulturalMap: React.FC<CulturalMapProps> = React.memo(({
 
   // Mobile UI Modals & Bottom Sheet (3 states: 'collapsed' | 'half' | 'full')
   const [sheetState, setSheetState] = useState<BottomSheetState>('collapsed');
-
-  // Notify <GuideCharacter /> whenever bottom sheet state changes on fullscreen map so it automatically shifts above the sheet edge
-  useEffect(() => {
-    if (embedded) return;
-    const heightVh =
-      sheetState === 'full'
-        ? MAP_TUNABLE_PARAMS.SHEET_FULL_DVH
-        : sheetState === 'half'
-        ? MAP_TUNABLE_PARAMS.SHEET_HALF_DVH
-        : 0;
-    notifyMapSheetState(sheetState, heightVh);
-    return () => {
-      notifyMapSheetState('collapsed', 0);
-    };
-  }, [sheetState, embedded]);
   const [isLegendOpen, setIsLegendOpen] = useState<boolean>(false);
   const [isProvinceDrawerOpen, setIsProvinceDrawerOpen] = useState<boolean>(false);
   const [provinceDrawerSearch, setProvinceDrawerSearch] = useState<string>('');
@@ -645,10 +664,42 @@ export const CulturalMap: React.FC<CulturalMapProps> = React.memo(({
   const dragCurrentDeltaYRef = useRef<number>(0);
   const [dragOffsetPx, setDragOffsetPx] = useState<number>(0);
 
-  // GPS State
-  const [userLocation, setUserLocation] = useState<UserLocation | null>(null);
+  // GPS State — Initialize with saved real GPS location if available
+  const [userLocation, setUserLocation] = useState<UserLocation | null>(() => {
+    const saved = geolocationService.getLastKnownLocation();
+    return saved && saved.source === 'gps' ? saved : null;
+  });
+  const userLocationRef = useRef<UserLocation | null>(userLocation);
+  userLocationRef.current = userLocation;
   const [isLocating, setIsLocating] = useState<boolean>(false);
   const [locationMessage, setLocationMessage] = useState<string>('');
+
+  // In-App Culinary & Road Route Navigation State (Default routeFromUserGps = true so GPS is turned on automatically!)
+  const [isCulinaryRouteOpen, setIsCulinaryRouteOpen] = useState<boolean>(false);
+  const [nearbyPlaces, setNearbyPlaces] = useState<PlaceItem[]>([]);
+  const [selectedRoutePlace, setSelectedRoutePlace] = useState<PlaceItem | null>(null);
+  const [routeTravelMode, setRouteTravelMode] = useState<TravelModeType>('driving');
+  const [routeFromUserGps, setRouteFromUserGps] = useState<boolean>(true);
+  const [activeRoadRoute, setActiveRoadRoute] = useState<RoadRouteResult | null>(null);
+  const [isCalculatingRoute, setIsCalculatingRoute] = useState<boolean>(false);
+  const [activeStepIndex, setActiveStepIndex] = useState<number | null>(null);
+
+  // Notify <GuideCharacter /> whenever bottom sheet state changes on fullscreen map so it automatically shifts above the sheet edge
+  useEffect(() => {
+    if (embedded) return;
+    const heightVh =
+      sheetState === 'full'
+        ? MAP_TUNABLE_PARAMS.SHEET_FULL_DVH
+        : sheetState === 'half'
+        ? isCulinaryRouteOpen
+          ? 46
+          : MAP_TUNABLE_PARAMS.SHEET_HALF_DVH
+        : 0;
+    notifyMapSheetState(sheetState, heightVh);
+    return () => {
+      notifyMapSheetState('collapsed', 0);
+    };
+  }, [sheetState, embedded, isCulinaryRouteOpen]);
 
   // Precompute heritage counts per 34 administrative unit for fast O(1) lookup
   const provinceHeritageStats = useMemo(() => {
@@ -1088,18 +1139,21 @@ export const CulturalMap: React.FC<CulturalMapProps> = React.memo(({
       }
 
       const provStats = provinceHeritageStatsRef.current.get(targetName);
+      const currentLang = languageRef.current === 'en' ? 'en' : 'vi';
       triggerGuideNarration({
         id: `province-${targetName}`,
         title: matchedUnit ? matchedUnit.name : targetName,
         introText: getProvinceIntroText(
           targetName,
           matchedUnit?.historicalNotes,
-          provStats?.count
+          provStats?.count,
+          currentLang
         ),
         targetType: 'province',
         provinceName: targetName,
         screenX,
-        screenY
+        screenY,
+        lang: currentLang
       });
 
       if (!map) return;
@@ -1197,20 +1251,19 @@ export const CulturalMap: React.FC<CulturalMapProps> = React.memo(({
         setSheetState('half');
         setTouchOrFocusBanner(resolveTerritoryMeta('Hoàng Sa'));
         map.flyTo([16.3, 110.2], 7.2, { duration: 0.8 });
+        const currentLang = languageRef.current === 'en' ? 'en' : 'vi';
         triggerGuideNarration({
           id: 'sovereignty-hoang-sa',
           title:
-            languageRef.current === 'en'
+            currentLang === 'en'
               ? 'Hoang Sa Archipelago (Da Nang)'
               : 'Quần đảo Hoàng Sa (Đà Nẵng)',
-          introText:
-            languageRef.current === 'en'
-              ? 'The Hoang Sa (Paracel) Archipelago is a sacred part of Vietnamese sovereignty under Da Nang City.'
-              : getProvinceIntroText('Hoàng Sa'),
+          introText: getProvinceIntroText('Hoàng Sa', undefined, undefined, currentLang),
           targetType: 'sovereignty',
           provinceName: 'Đà Nẵng',
           screenX: clientX,
-          screenY: clientY
+          screenY: clientY,
+          lang: currentLang
         });
       };
 
@@ -1219,20 +1272,19 @@ export const CulturalMap: React.FC<CulturalMapProps> = React.memo(({
         setSheetState('half');
         setTouchOrFocusBanner(resolveTerritoryMeta('Trường Sa'));
         map.flyTo([11.2, 111.8], 7.0, { duration: 0.8 });
+        const currentLang = languageRef.current === 'en' ? 'en' : 'vi';
         triggerGuideNarration({
           id: 'sovereignty-truong-sa',
           title:
-            languageRef.current === 'en'
+            currentLang === 'en'
               ? 'Truong Sa Archipelago (Khanh Hoa)'
               : 'Quần đảo Trường Sa (Khánh Hòa)',
-          introText:
-            languageRef.current === 'en'
-              ? 'The Truong Sa (Spratly) Archipelago is a sacred part of Vietnamese sovereignty under Khanh Hoa Province.'
-              : getProvinceIntroText('Trường Sa'),
+          introText: getProvinceIntroText('Trường Sa', undefined, undefined, currentLang),
           targetType: 'sovereignty',
           provinceName: 'Khánh Hòa',
           screenX: clientX,
-          screenY: clientY
+          screenY: clientY,
+          lang: currentLang
         });
       };
 
@@ -1412,6 +1464,12 @@ export const CulturalMap: React.FC<CulturalMapProps> = React.memo(({
     const markersGroup = L.layerGroup().addTo(map);
     markersLayerRef.current = markersGroup;
 
+    // 3) Dedicated Road Route & Culinary Pins Pane (zIndex: 660, above markers and streets)
+    const routePane = map.createPane('routePane');
+    routePane.style.zIndex = '660';
+    const routeGroup = L.layerGroup().addTo(map);
+    routeLayerRef.current = routeGroup;
+
     renderSeaAndSovereigntyLayers(seaGroup, sovGroup, map);
 
     // Fit full Vietnam S-shape with mobile safe padding
@@ -1568,7 +1626,9 @@ export const CulturalMap: React.FC<CulturalMapProps> = React.memo(({
 
     const t1 = window.setTimeout(() => {
       map.invalidateSize();
-      map.fitBounds(REGION_BOUNDS.all, { padding: fitPadding });
+      if (!hasInitialFocusRef.current) {
+        map.fitBounds(REGION_BOUNDS.all, { padding: fitPadding });
+      }
       scheduleViewportUpdate(map);
     }, 180);
 
@@ -1621,7 +1681,17 @@ export const CulturalMap: React.FC<CulturalMapProps> = React.memo(({
     }
   }, [language, renderSeaAndSovereigntyLayers]);
 
-  // 3. Manage External Tile Layer (when user switches away from 'vietnam_only')
+  // Track whether user manually locked 'vietnam_only' while zoomed in
+  const manualVietnamOnlyRef = useRef<boolean>(false);
+
+  // 3. Manage External Tile Layer (automatically show detailed road tiles when baseMode !== 'vietnam_only', during routing, or when zoomed in >= 10)
+  const shouldShowStreetsAutomatically =
+    baseMode === 'vietnam_only' &&
+    !manualVietnamOnlyRef.current &&
+    (isCulinaryRouteOpen || currentZoom >= 10);
+
+  const activeTileMode: MapBaseMode = shouldShowStreetsAutomatically ? 'streets' : baseMode;
+
   useEffect(() => {
     const map = mapInstanceRef.current;
     if (!map) return;
@@ -1631,21 +1701,55 @@ export const CulturalMap: React.FC<CulturalMapProps> = React.memo(({
       tileLayerRef.current = null;
     }
 
-    if (baseMode === 'vietnam_only') return;
+    if (activeTileMode === 'vietnam_only') return;
 
-    const provider = TILE_PROVIDERS[baseMode];
+    const provider = TILE_PROVIDERS[activeTileMode];
     if (provider) {
+      let switchedToFallback = false;
+      let tileErrorCount = 0;
       const tile = L.tileLayer(provider.url, {
         attribution: provider.attribution,
-        maxZoom: provider.maxZoom
-      }).addTo(map);
+        maxZoom: provider.maxZoom,
+        maxNativeZoom: provider.maxNativeZoom,
+        keepBuffer: 4,
+        updateWhenIdle: false,
+        updateWhenZooming: false,
+        ...(provider.subdomains ? { subdomains: provider.subdomains } : {})
+      });
+
+      if (provider.fallbackUrl) {
+        tile.on('tileerror', () => {
+          tileErrorCount += 1;
+          if (switchedToFallback || tileErrorCount < 2 || !mapInstanceRef.current) return;
+          switchedToFallback = true;
+          mapInstanceRef.current.removeLayer(tile);
+          const fallbackTile = L.tileLayer(provider.fallbackUrl!, {
+            attribution: '&copy; Esri World Street Map',
+            maxZoom: 19,
+            maxNativeZoom: 18,
+            keepBuffer: 4,
+            updateWhenIdle: false
+          }).addTo(mapInstanceRef.current);
+          tileLayerRef.current = fallbackTile;
+          fallbackTile.bringToBack();
+        });
+      }
+
+      tile.addTo(map);
       tileLayerRef.current = tile;
       tile.bringToBack();
     }
-  }, [baseMode]);
+  }, [activeTileMode]);
 
   // Select an individual heritage item, fly to its coordinates, open bottom sheet to 'full', and narrate via <GuideCharacter />
   const handleSelectHeritageItem = useCallback((item: HeritageItem) => {
+    hasInitialFocusRef.current = true;
+    manualVietnamOnlyRef.current = false;
+    setIsCulinaryRouteOpen(false);
+    setBaseMode(prev => (prev === 'vietnam_only' ? 'streets' : prev));
+    if (routeLayerRef.current) {
+      routeLayerRef.current.clearLayers();
+    }
     setActiveHeritage(item);
     setSheetState('full');
     setIsSearchFocused(false);
@@ -1660,27 +1764,35 @@ export const CulturalMap: React.FC<CulturalMapProps> = React.memo(({
       screenY = rect.top + pt.y;
     }
 
+    const currentLang = languageRef.current === 'en' ? 'en' : 'vi';
     triggerGuideNarration({
       id: `heritage-${item.id}`,
       title: item.name,
       subtitleBadge: item.province,
-      introText: getHeritageIntroText(item),
+      introText: getHeritageIntroText(item, currentLang),
       targetType: 'heritage',
       provinceName: item.province,
       heritageId: item.id,
       screenX,
-      screenY
+      screenY,
+      lang: currentLang
     });
 
     if (map && item.lat && item.lng) {
-      const targetZoom = Math.max(map.getZoom(), 11);
-      const latOffset = window.innerWidth < 768 ? -0.02 : 0;
+      const targetZoom = Math.max(map.getZoom(), 13);
+      const latOffset = window.innerWidth < 768 ? -0.006 : 0;
       map.flyTo([item.lat + latOffset, item.lng], targetZoom, { duration: 0.7 });
     }
   }, []);
 
   // Reset to full nationwide view
   const handleResetVietnamView = useCallback(() => {
+    manualVietnamOnlyRef.current = false;
+    setIsCulinaryRouteOpen(false);
+    setBaseMode('vietnam_only');
+    if (routeLayerRef.current) {
+      routeLayerRef.current.clearLayers();
+    }
     setSelectedProvinceName(null);
     setActiveHeritage(null);
     setSearchQuery('');
@@ -1704,6 +1816,10 @@ export const CulturalMap: React.FC<CulturalMapProps> = React.memo(({
 
   // Select region chip & zoom to fit that region
   const handleSelectRegionChip = useCallback((region: RegionFilterType) => {
+    setIsCulinaryRouteOpen(false);
+    if (routeLayerRef.current) {
+      routeLayerRef.current.clearLayers();
+    }
     setSelectedRegion(region);
     setSelectedProvinceName(null);
     setActiveHeritage(null);
@@ -1721,6 +1837,458 @@ export const CulturalMap: React.FC<CulturalMapProps> = React.memo(({
     });
   }, []);
 
+  // Clear in-app culinary road route
+  const clearCulinaryRoute = useCallback(() => {
+    setIsCulinaryRouteOpen(false);
+    setSelectedRoutePlace(null);
+    setActiveRoadRoute(null);
+    setActiveStepIndex(null);
+    if (routeLayerRef.current) {
+      routeLayerRef.current.clearLayers();
+    }
+  }, []);
+
+  // Activate in-app nearby culinary pins + road routing directly on the map (with automatic live GPS acquisition)
+  const handleActivateCulinaryRoute = useCallback(
+    async (
+      heritage: HeritageItem,
+      targetPlaceId?: string,
+      customMode?: TravelModeType,
+      useGps?: boolean,
+      forceRefreshGps?: boolean
+    ) => {
+      hasInitialFocusRef.current = true;
+      guideVoiceService.unlockAudioOnUserGesture();
+      setSelectedProvinceName(heritage.province);
+      setActiveHeritage(heritage);
+      setIsCulinaryRouteOpen(true);
+      // Automatically switch to 'streets' tile layer so roads, streets, and intersections are clearly visible
+      manualVietnamOnlyRef.current = false;
+      setBaseMode('streets');
+      // Set mobile bottom sheet to 'half' so the user sees the live street route on the top half AND the directions on the bottom half
+      setSheetState('half');
+
+      const allPlacesMap = storageService.getPlaces();
+      const places = getPlacesForHeritage(heritage.id, allPlacesMap);
+      setNearbyPlaces(places);
+
+      // Synthetic PlaceItem when routing directly from User GPS to the Heritage site itself
+      const heritageAsDestination: PlaceItem = {
+        id: '__HERITAGE__',
+        name: heritage.name,
+        category: 'entertainment',
+        categoryLabel: heritage.categoryLabel || 'Di sản văn hóa',
+        address: `${heritage.name}, ${heritage.province}`,
+        lat: heritage.lat,
+        lng: heritage.lng,
+        rating: 5.0,
+        userRatingCount: 1200,
+        priceLevel: 1,
+        priceText: heritage.ticketPrice || 'Điểm di sản',
+        distanceKm: 0,
+        photoUrl: heritage.imageUrl || '',
+        googleMapsUri: '',
+        specialties: [heritage.categoryLabel],
+      };
+
+      const chosenPlace =
+        targetPlaceId === '__HERITAGE__'
+          ? heritageAsDestination
+          : (targetPlaceId ? places.find((p) => p.id === targetPlaceId) : null) ||
+            places[0] ||
+            heritageAsDestination;
+
+      setSelectedRoutePlace(chosenPlace);
+      setActiveStepIndex(null);
+
+      const modeToUse = customMode || routeTravelMode;
+      if (customMode) setRouteTravelMode(customMode);
+
+      // If routing to the Heritage site itself, always route from User GPS! Otherwise default to true unless explicitly set to false.
+      const gpsToUse =
+        chosenPlace.id === '__HERITAGE__'
+          ? true
+          : useGps !== undefined
+          ? useGps
+          : routeFromUserGps;
+      setRouteFromUserGps(gpsToUse);
+
+      if (!chosenPlace) return;
+
+      // Turn on and acquire real user GPS coordinates if gpsToUse is true
+      let activeLoc = userLocationRef.current;
+      const isGpsFresh =
+        activeLoc &&
+        activeLoc.source === 'gps' &&
+        typeof activeLoc.timestamp === 'number' &&
+        Date.now() - activeLoc.timestamp < 45000;
+
+      if (gpsToUse && (forceRefreshGps || !isGpsFresh)) {
+        setIsLocating(true);
+        setLocationMessage(
+          languageRef.current === 'en'
+            ? '🛰️ Turning on your GPS for accurate routing...'
+            : '🛰️ Đang bật GPS của bạn để chỉ đường chính xác...'
+        );
+        const gpsRes = await geolocationService.requestLiveGpsForNavigation(true);
+        setIsLocating(false);
+        if (gpsRes.success && gpsRes.location) {
+          activeLoc = gpsRes.location;
+          userLocationRef.current = activeLoc;
+          setUserLocation(activeLoc);
+          const locName =
+            activeLoc.cityName ||
+            `${activeLoc.lat.toFixed(4)}°B, ${activeLoc.lng.toFixed(4)}°Đ`;
+          setLocationMessage(
+            languageRef.current === 'en'
+              ? `🛰️ GPS Active: ${locName}${activeLoc.accuracy ? ` (±${activeLoc.accuracy}m)` : ''}`
+              : `🛰️ Đã bật GPS: ${locName}${activeLoc.accuracy ? ` (±${activeLoc.accuracy}m)` : ''}`
+          );
+          window.setTimeout(() => setLocationMessage(''), 4500);
+        } else {
+          setLocationMessage(
+            languageRef.current === 'en'
+              ? '⚠️ Could not lock GPS signal. Routing from Heritage site.'
+              : '⚠️ Chưa bật được quyền GPS trên trình duyệt. Đang chỉ đường từ Di sản.'
+          );
+          window.setTimeout(() => setLocationMessage(''), 4500);
+        }
+      }
+
+      const hasValidGps = Boolean(gpsToUse && activeLoc);
+      const startLat = hasValidGps && activeLoc ? activeLoc.lat : heritage.lat;
+      const startLng = hasValidGps && activeLoc ? activeLoc.lng : heritage.lng;
+      const originLabel =
+        hasValidGps && activeLoc
+          ? languageRef.current === 'en'
+            ? `Your GPS (${activeLoc.cityName || 'Current Location'})`
+            : `Vị trí GPS của bạn (${activeLoc.cityName || 'Hiện tại'})`
+          : heritage.name;
+
+      setIsCalculatingRoute(true);
+      const routeRes = await fetchRoadRoute(
+        startLat,
+        startLng,
+        chosenPlace.lat,
+        chosenPlace.lng,
+        modeToUse,
+        chosenPlace.address
+      );
+      setActiveRoadRoute(routeRes);
+      setIsCalculatingRoute(false);
+
+      const currentLang = languageRef.current === 'en' ? 'en' : 'vi';
+      const voiceText = buildRouteVoiceNarration(originLabel, chosenPlace, routeRes, currentLang);
+
+      triggerGuideNarration({
+        id: `food-route-${heritage.id}-${chosenPlace.id}-${Date.now()}`,
+        title:
+          currentLang === 'en'
+            ? `GPS Route: ${chosenPlace.name}`
+            : `Chỉ đường GPS: ${chosenPlace.name}`,
+        subtitleBadge: `${routeRes.distanceTextVi} · ${routeRes.durationMinutes} ${
+          currentLang === 'en' ? 'min' : 'phút'
+        }`,
+        introText: voiceText,
+        targetType: 'food_recommendation',
+        heritageId: heritage.id,
+        provinceName: heritage.province,
+        lang: currentLang,
+        recommendedPlaces: places.slice(0, 3).map((p) => ({
+          id: p.id,
+          name: p.name,
+          categoryLabel: p.categoryLabel,
+          rating: p.rating,
+          distanceKm:
+            hasValidGps && activeLoc
+              ? calculateDistanceKm(activeLoc.lat, activeLoc.lng, p.lat, p.lng)
+              : p.distanceKm,
+          priceText: p.priceText,
+          specialties: p.specialties,
+          googleMapsUri: p.googleMapsUri,
+          address: p.address,
+        })),
+      });
+    },
+    [routeTravelMode, routeFromUserGps]
+  );
+
+  // Live GPS Watch: Automatically track user movement in real time while GPS routing is active
+  useEffect(() => {
+    if (!isCulinaryRouteOpen || !routeFromUserGps) return;
+    const stopWatch = geolocationService.watchLivePosition(async (liveLoc) => {
+      const prev = userLocationRef.current;
+      userLocationRef.current = liveLoc;
+      setUserLocation(liveLoc);
+
+      // Recalculate street route if the user has moved more than 30 meters
+      if (
+        selectedRoutePlace &&
+        (!prev || calculateDistanceKm(prev.lat, prev.lng, liveLoc.lat, liveLoc.lng) >= 0.03)
+      ) {
+        const updatedRoute = await fetchRoadRoute(
+          liveLoc.lat,
+          liveLoc.lng,
+          selectedRoutePlace.lat,
+          selectedRoutePlace.lng,
+          routeTravelMode,
+          selectedRoutePlace.address
+        );
+        setActiveRoadRoute(updatedRoute);
+      }
+    });
+    return () => {
+      stopWatch();
+    };
+  }, [isCulinaryRouteOpen, routeFromUserGps, selectedRoutePlace, routeTravelMode]);
+
+  // Listen for external route requests (from FoodAndEntertainmentModule, 3D Guide bubble, or HeritageDetailModal)
+  useEffect(() => {
+    if (initialRouteRequest && initialRouteRequest.heritageId) {
+      const targetH = heritages.find((h) => h.id === initialRouteRequest.heritageId);
+      if (targetH) {
+        handleActivateCulinaryRoute(
+          targetH,
+          initialRouteRequest.placeId,
+          initialRouteRequest.travelMode,
+          initialRouteRequest.useUserGps ?? true
+        );
+      }
+      onClearRouteRequest?.();
+    }
+  }, [initialRouteRequest, heritages, handleActivateCulinaryRoute, onClearRouteRequest]);
+
+  useEffect(() => {
+    const handleOpenRouteEvent = (e: Event) => {
+      const custom = e as CustomEvent<MapRouteRequestPayload>;
+      if (custom.detail?.heritageId) {
+        const targetH = heritages.find((h) => h.id === custom.detail.heritageId);
+        if (targetH) {
+          handleActivateCulinaryRoute(
+            targetH,
+            custom.detail.placeId,
+            custom.detail.travelMode,
+            custom.detail.useUserGps ?? true
+          );
+        }
+      }
+    };
+    window.addEventListener(MAP_OPEN_ROUTE_EVENT, handleOpenRouteEvent);
+    return () => window.removeEventListener(MAP_OPEN_ROUTE_EVENT, handleOpenRouteEvent);
+  }, [heritages, handleActivateCulinaryRoute]);
+
+  // Draw the road route polyline, live GPS origin pin, heritage pin, and nearby culinary pins on the Leaflet map
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    const routeGroup = routeLayerRef.current;
+    if (!map || !routeGroup) return;
+
+    routeGroup.clearLayers();
+
+    if (!isCulinaryRouteOpen || !activeHeritage) return;
+
+    const usingLiveGps = Boolean(routeFromUserGps && userLocation);
+    const startLat = usingLiveGps && userLocation ? userLocation.lat : activeHeritage.lat;
+    const startLng = usingLiveGps && userLocation ? userLocation.lng : activeHeritage.lng;
+
+    // 1. Draw the Road Route Polyline following actual streets
+    if (activeRoadRoute && activeRoadRoute.coordinates.length >= 2) {
+      const outerCasing = L.polyline(activeRoadRoute.coordinates, {
+        pane: 'routePane',
+        color: '#064E3B',
+        weight: 10,
+        opacity: 0.55,
+        lineCap: 'round',
+        lineJoin: 'round',
+      });
+      const mainRoadLine = L.polyline(activeRoadRoute.coordinates, {
+        pane: 'routePane',
+        color: '#0D9488',
+        weight: 6,
+        opacity: 0.98,
+        lineCap: 'round',
+        lineJoin: 'round',
+      });
+      const directionalDash = L.polyline(activeRoadRoute.coordinates, {
+        pane: 'routePane',
+        color: '#FFFDF8',
+        weight: 2.2,
+        opacity: 0.9,
+        dashArray: '8, 12',
+        lineCap: 'round',
+        lineJoin: 'round',
+      });
+
+      routeGroup.addLayer(outerCasing);
+      routeGroup.addLayer(mainRoadLine);
+      routeGroup.addLayer(directionalDash);
+    }
+
+    // 2A. If User GPS is active, draw a GPS accuracy halo + live blue GPS beacon
+    const shortHeritageName =
+      activeHeritage.name.length > 16
+        ? activeHeritage.name.slice(0, 15) + '…'
+        : activeHeritage.name;
+
+    if (usingLiveGps && userLocation) {
+      const accuracyRadius = Math.min(Math.max(userLocation.accuracy || 25, 18), 110);
+      const gpsHalo = L.circle([userLocation.lat, userLocation.lng], {
+        pane: 'routePane',
+        radius: accuracyRadius,
+        color: '#0284C7',
+        weight: 1.5,
+        fillColor: '#38BDF8',
+        fillOpacity: 0.16,
+        interactive: false,
+      });
+      routeGroup.addLayer(gpsHalo);
+
+      const gpsOriginMarker = L.marker([userLocation.lat, userLocation.lng], {
+        pane: 'routePane',
+        zIndexOffset: 950,
+        icon: L.divIcon({
+          className: 'hdv-route-gps-pin',
+          html: `<div style="transform:translate(-50%, -8px);display:flex;flex-direction:column;align-items:center;pointer-events:none;">
+            <div style="width:15px;height:15px;border-radius:999px;background:#0284C7;border:3px solid #FFFDF8;box-shadow:0 0 0 4px rgba(2,132,199,0.32), 0 2px 8px rgba(0,0,0,0.4);margin-bottom:3px;"></div>
+            <div style="background:#0369A1;color:#FFFDF8;border:1.5px solid #BAE6FD;border-radius:999px;padding:1.5px 7px;font-size:10px;font-weight:800;white-space:nowrap;box-shadow:0 3px 8px rgba(3,105,161,0.4);">
+              GPS của bạn
+            </div>
+          </div>`,
+          iconSize: [0, 0],
+        }),
+      });
+      routeGroup.addLayer(gpsOriginMarker);
+
+      // Avoid showing an overlapping wide heritage pill right next to the GPS pin when they are physically close
+      const isHeritageTarget = selectedRoutePlace?.id === '__HERITAGE__';
+      const gpsScreenPt = map.latLngToContainerPoint([userLocation.lat, userLocation.lng]);
+      const heritageScreenPt = map.latLngToContainerPoint([activeHeritage.lat, activeHeritage.lng]);
+      const isHeritageNearGps = gpsScreenPt.distanceTo(heritageScreenPt) < 56;
+
+      const heritageLandmarkPin = L.marker([activeHeritage.lat, activeHeritage.lng], {
+        pane: 'routePane',
+        zIndexOffset: isHeritageTarget ? 1050 : 620,
+        icon: L.divIcon({
+          className: 'hdv-route-heritage-pin',
+          html: isHeritageTarget
+            ? `<div style="transform:translate(-50%,-100%);display:flex;flex-direction:column;align-items:center;cursor:pointer;">
+                <div style="background:#B3261E;color:#FFFDF8;border:2px solid #FDE68A;border-radius:999px;padding:3px 9px;font-size:11px;font-weight:800;white-space:nowrap;box-shadow:0 5px 14px rgba(0,0,0,0.38);">
+                  🏛️ ${shortHeritageName}
+                </div>
+                <div style="width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:6px solid #FDE68A;"></div>
+                <div style="width:11px;height:11px;border-radius:999px;background:#B3261E;border:2.5px solid #FFFDF8;"></div>
+              </div>`
+            : isHeritageNearGps
+            ? `<div style="transform:translate(-50%,-50%);display:flex;align-items:center;justify-content:center;cursor:pointer;" title="${activeHeritage.name}">
+                <div style="width:24px;height:24px;border-radius:999px;background:#B3261E;color:#FFFDF8;border:2px solid #FFFDF8;box-shadow:0 3px 8px rgba(0,0,0,0.38);display:flex;align-items:center;justify-content:center;font-size:11px;">🏛️</div>
+              </div>`
+            : `<div style="transform:translate(-50%, -6px);display:flex;flex-direction:column;align-items:center;cursor:pointer;" title="${activeHeritage.name}">
+                <div style="width:12px;height:12px;border-radius:999px;background:#B3261E;border:2.5px solid #FFFDF8;box-shadow:0 2px 6px rgba(0,0,0,0.38);margin-bottom:2px;"></div>
+                <div style="background:#B3261E;color:#FFFDF8;border:1px solid #FDE68A;border-radius:999px;padding:1px 7px;font-size:9.5px;font-weight:800;white-space:nowrap;box-shadow:0 3px 8px rgba(0,0,0,0.28);">
+                  🏛️ ${shortHeritageName}
+                </div>
+              </div>`,
+          iconSize: [0, 0],
+        }),
+      });
+      heritageLandmarkPin.on('click', (e) => {
+        L.DomEvent.stopPropagation(e);
+        handleActivateCulinaryRoute(activeHeritage, '__HERITAGE__', routeTravelMode, true);
+      });
+      routeGroup.addLayer(heritageLandmarkPin);
+    } else {
+      // 2B. Origin is Heritage Site
+      const originMarker = L.marker([startLat, startLng], {
+        pane: 'routePane',
+        zIndexOffset: 700,
+        icon: L.divIcon({
+          className: 'hdv-route-origin-pin',
+          html: `<div style="transform:translate(-50%, -6px);display:flex;flex-direction:column;align-items:center;pointer-events:none;">
+            <div style="width:13px;height:13px;border-radius:999px;background:#B3261E;border:3px solid #FFFDF8;box-shadow:0 2px 8px rgba(0,0,0,0.4);margin-bottom:2px;"></div>
+            <div style="background:#B3261E;color:#FFFDF8;border:1.5px solid #FDE68A;border-radius:999px;padding:1.5px 7px;font-size:10px;font-weight:800;white-space:nowrap;box-shadow:0 3px 8px rgba(179,38,30,0.4);">
+              🏛️ ${shortHeritageName}
+            </div>
+          </div>`,
+          iconSize: [0, 0],
+        }),
+      });
+      routeGroup.addLayer(originMarker);
+    }
+
+    // 3. Nearby Culinary Restaurant Pins (1..N):
+    // - Selected destination shows a crisp compact callout above the pin
+    // - Unselected places show a minimal 24x24px numbered circle so pins NEVER overlap roads or labels!
+    nearbyPlaces.forEach((place, idx) => {
+      const isSelectedPlace = selectedRoutePlace?.id === place.id;
+      const shortPlaceName =
+        place.name.length > 17 ? place.name.slice(0, 16) + '…' : place.name;
+
+      const placeMarker = L.marker([place.lat, place.lng], {
+        pane: 'routePane',
+        zIndexOffset: isSelectedPlace ? 1000 : 300 + idx,
+        icon: L.divIcon({
+          className: 'hdv-culinary-pin',
+          html: isSelectedPlace
+            ? `<div style="transform:translate(-50%,-100%);display:flex;flex-direction:column;align-items:center;cursor:pointer;">
+                <div style="background:#0D9488;color:#FFFDF8;border:2px solid #FFFDF8;border-radius:999px;padding:2.5px 8px;font-size:10.5px;font-weight:800;white-space:nowrap;box-shadow:0 6px 16px rgba(0,0,0,0.38);display:flex;align-items:center;gap:4px;">
+                  <span style="background:#F59E0B;color:#FFFDF8;border-radius:999px;width:15px;height:15px;display:inline-flex;align-items:center;justify-content:center;font-size:9.5px;font-weight:900;">${idx + 1}</span>
+                  <span>${shortPlaceName}</span>
+                  <span style="color:#FDE68A;font-size:10px;">★${place.rating}</span>
+                </div>
+                <div style="width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:6px solid #0D9488;"></div>
+                <div style="width:12px;height:12px;border-radius:999px;background:#0D9488;border:2.5px solid #FFFDF8;box-shadow:0 2px 6px rgba(0,0,0,0.4);"></div>
+              </div>`
+            : `<div style="transform:translate(-50%,-50%);display:flex;align-items:center;justify-content:center;cursor:pointer;" title="${place.name} (★${place.rating})">
+                <div style="width:24px;height:24px;background:#B3261E;color:#FFFDF8;border:2px solid #FFFDF8;border-radius:999px;font-size:10.5px;font-weight:900;box-shadow:0 3px 8px rgba(0,0,0,0.38);display:flex;align-items:center;justify-content:center;">
+                  ${idx + 1}
+                </div>
+              </div>`,
+          iconSize: [0, 0],
+        }),
+      });
+
+      placeMarker.on('click', (e) => {
+        L.DomEvent.stopPropagation(e);
+        handleActivateCulinaryRoute(activeHeritage, place.id, routeTravelMode, routeFromUserGps);
+      });
+
+      routeGroup.addLayer(placeMarker);
+    });
+
+    // 4. Zoom map bounds with extra mobile top/bottom safe padding so top banner & bottom sheet never clip route pins
+    const boundsPoints: [number, number][] = [[startLat, startLng]];
+    if (activeRoadRoute && activeRoadRoute.coordinates.length >= 2) {
+      boundsPoints.push(...activeRoadRoute.coordinates);
+    } else if (selectedRoutePlace) {
+      boundsPoints.push([selectedRoutePlace.lat, selectedRoutePlace.lng]);
+    } else {
+      nearbyPlaces.forEach((p) => boundsPoints.push([p.lat, p.lng]));
+    }
+
+    if (boundsPoints.length >= 2) {
+      const isMobile = window.innerWidth < 768;
+      map.flyToBounds(boundsPoints, {
+        paddingTopLeft: [isMobile ? 32 : 44, isMobile ? 132 : 95],
+        paddingBottomRight: [
+          isMobile ? 48 : 375,
+          isMobile ? Math.round(window.innerHeight * 0.46) + 26 : 55,
+        ],
+        maxZoom: 17,
+        duration: 0.65,
+      });
+    }
+  }, [
+    isCulinaryRouteOpen,
+    activeHeritage,
+    nearbyPlaces,
+    selectedRoutePlace,
+    activeRoadRoute,
+    routeTravelMode,
+    routeFromUserGps,
+    userLocation,
+    handleActivateCulinaryRoute,
+  ]);
+
   // Compute province polygon style dynamically (used on initial mount and in-place via geoLayer.setStyle)
   const computeProvinceStyle = useCallback(
     (feature: any): L.PathOptions => {
@@ -1731,6 +2299,28 @@ export const CulturalMap: React.FC<CulturalMapProps> = React.memo(({
       const isIslandHighlighted =
         selectedRegion === 'islands' && ISLAND_PROVINCES.has(displayName);
       const hasAnySelection = selectedProvinceName !== null;
+
+      // Completely hide coarse province outlines while navigating street routes
+      if (isCulinaryRouteOpen) {
+        return {
+          stroke: false,
+          weight: 0,
+          opacity: 0,
+          fill: false,
+          fillOpacity: 0
+        };
+      }
+
+      // When viewing street/satellite/topo tiles, keep province fill transparent so roads & street names are 100% readable!
+      if (activeTileMode !== 'vietnam_only') {
+        return {
+          fillColor: isSelected ? MAP_TUNABLE_PARAMS.LAND_COLOR_SELECTED : MAP_TUNABLE_PARAMS.LAND_COLOR_DEFAULT,
+          fillOpacity: 0,
+          color: isSelected ? MAP_TUNABLE_PARAMS.SELECTED_BORDER_COLOR : MAP_TUNABLE_PARAMS.PROVINCE_BORDER_COLOR,
+          weight: isSelected ? 1.5 : 0.7,
+          opacity: 0.45
+        };
+      }
 
       if (isSelected) {
         return {
@@ -1756,15 +2346,13 @@ export const CulturalMap: React.FC<CulturalMapProps> = React.memo(({
         fillColor: MAP_TUNABLE_PARAMS.LAND_COLOR_DEFAULT,
         fillOpacity: hasAnySelection
           ? MAP_TUNABLE_PARAMS.LAND_OPACITY_DIMMED
-          : baseMode === 'vietnam_only'
-          ? MAP_TUNABLE_PARAMS.LAND_OPACITY_DEFAULT
-          : 0.55,
+          : MAP_TUNABLE_PARAMS.LAND_OPACITY_DEFAULT,
         color: MAP_TUNABLE_PARAMS.PROVINCE_BORDER_COLOR,
         weight: 1.15,
         opacity: 0.78
       };
     },
-    [selectedProvinceName, selectedRegion, baseMode]
+    [selectedProvinceName, selectedRegion, activeTileMode, isCulinaryRouteOpen]
   );
 
   // 4A. Mount Vietnam 34-Province Polygons ONLY ONCE per geoData load (single layer, zero duplicate SVG paths)
@@ -1846,6 +2434,10 @@ export const CulturalMap: React.FC<CulturalMapProps> = React.memo(({
     if (!map || !markersGroup) return;
 
     markersGroup.clearLayers();
+
+    // When active culinary street routing is open, hide background heritage/province markers
+    // so they never overlap the street route polyline or restaurant pins!
+    if (isCulinaryRouteOpen) return;
 
     const mapBounds = map.getBounds().pad(0.22);
     const zoom = map.getZoom();
@@ -2385,21 +2977,24 @@ export const CulturalMap: React.FC<CulturalMapProps> = React.memo(({
     handleSelectHeritageItem,
     bindTerritoryPointerAndKeyboard,
     hideDesktopCursorTooltip,
-    clearHoveredPathHighlight
+    clearHoveredPathHighlight,
+    isCulinaryRouteOpen
   ]);
 
-  // GPS Request Handler
+  // GPS Request Handler (automatically turns on detailed street map around user's GPS location)
   const handleRequestGPS = async () => {
     setIsLocating(true);
     setLocationMessage('');
-    const res = await geolocationService.requestCurrentPosition();
+    const res = await geolocationService.requestLiveGpsForNavigation(true);
     setIsLocating(false);
 
     if (res.success && res.location) {
+      manualVietnamOnlyRef.current = false;
       setUserLocation(res.location);
-      setLocationMessage(`Đã định vị: ${res.location.cityName || 'Vị trí của bạn'}`);
+      setBaseMode('streets');
+      setLocationMessage(`Đã định vị GPS: ${res.location.cityName || 'Vị trí của bạn'}`);
       if (mapInstanceRef.current) {
-        mapInstanceRef.current.flyTo([res.location.lat, res.location.lng], 10.5, {
+        mapInstanceRef.current.flyTo([res.location.lat, res.location.lng], 15, {
           duration: 0.8
         });
       }
@@ -2408,8 +3003,10 @@ export const CulturalMap: React.FC<CulturalMapProps> = React.memo(({
       setLocationMessage('Chưa lấy được GPS. Đã chuyển về Hà Nội.');
       const preset = geolocationService.setPresetLocation('hanoi');
       if (preset && mapInstanceRef.current) {
+        manualVietnamOnlyRef.current = false;
         setUserLocation(preset);
-        mapInstanceRef.current.flyTo([preset.lat, preset.lng], 9.5, { duration: 0.8 });
+        setBaseMode('streets');
+        mapInstanceRef.current.flyTo([preset.lat, preset.lng], 14, { duration: 0.8 });
       }
       window.setTimeout(() => setLocationMessage(''), 4000);
     }
@@ -2493,7 +3090,8 @@ export const CulturalMap: React.FC<CulturalMapProps> = React.memo(({
   const getSheetTranslateStyle = (): React.CSSProperties => {
     let baseTranslate = 'calc(100% - 76px)';
     if (sheetState === 'half') {
-      baseTranslate = `${100 - MAP_TUNABLE_PARAMS.SHEET_HALF_DVH}%`;
+      const halfDvh = isCulinaryRouteOpen ? 46 : MAP_TUNABLE_PARAMS.SHEET_HALF_DVH;
+      baseTranslate = `${100 - halfDvh}%`;
     } else if (sheetState === 'full') {
       baseTranslate = `${100 - MAP_TUNABLE_PARAMS.SHEET_FULL_DVH}%`;
     }
@@ -2541,10 +3139,10 @@ export const CulturalMap: React.FC<CulturalMapProps> = React.memo(({
       className={`relative w-full overflow-hidden select-none text-stone-100 ${
         embedded
           ? 'h-[80dvh] min-h-[540px] max-h-[780px] rounded-3xl border border-amber-500/30 shadow-2xl'
-          : 'h-[calc(100dvh-4rem)] md:h-[calc(100dvh-4.5rem)]'
+          : 'h-[calc(100dvh-6.75rem)] md:h-[calc(100dvh-6.25rem)]'
       }`}
       style={{
-        backgroundColor: MAP_TUNABLE_PARAMS.OCEAN_COLOR,
+        backgroundColor: activeTileMode !== 'vietnam_only' ? '#EFECE6' : MAP_TUNABLE_PARAMS.OCEAN_COLOR,
         paddingTop: embedded ? undefined : 'env(safe-area-inset-top, 0px)'
       }}
     >
@@ -2555,16 +3153,161 @@ export const CulturalMap: React.FC<CulturalMapProps> = React.memo(({
         ref={mapContainerRef}
         role="application"
         aria-label="Bản đồ di sản văn hóa Việt Nam tương tác"
-        className="hdv-map-touch-canvas isolate absolute inset-0 w-full h-full z-0"
+        className={`hdv-map-touch-canvas isolate absolute inset-0 w-full h-full z-0 ${
+          activeTileMode !== 'vietnam_only' ? 'hdv-map-tile-mode' : ''
+        } ${isCulinaryRouteOpen ? 'hdv-map-routing-mode' : ''}`}
         style={{
-          backgroundImage: MAP_TUNABLE_PARAMS.OCEAN_GRADIENT
+          backgroundImage:
+            activeTileMode !== 'vietnam_only' ? 'none' : MAP_TUNABLE_PARAMS.OCEAN_GRADIENT,
+          backgroundColor: activeTileMode !== 'vietnam_only' ? '#EFECE6' : MAP_TUNABLE_PARAMS.OCEAN_COLOR
         }}
       />
 
       {/* =====================================================================
-          2. TOP FLOATING SEARCH BAR + PROVINCE LIST TRIGGER + REGION CHIPS
+          2. TOP FLOATING BAR:
+             - When isCulinaryRouteOpen is true: Clean Compact Route Bar + Destination Tabs
+             - Otherwise: Search Bar + Province List Trigger + Region Chips
       ===================================================================== */}
-      <div className="absolute top-0 inset-x-0 z-20 p-2 sm:p-4 pointer-events-none flex flex-col gap-1.5 sm:gap-2 max-w-3xl lg:max-w-[calc(100%-380px)]">
+      {isCulinaryRouteOpen && activeHeritage ? (
+        <div className="absolute top-0 inset-x-0 z-20 p-2 sm:p-3 pointer-events-none flex flex-col gap-1.5 max-w-3xl lg:max-w-[calc(100%-380px)]">
+          <div className="pointer-events-auto flex items-center justify-between gap-2 px-2 py-1.5 rounded-2xl bg-[#FFFDF8]/96 backdrop-blur-md border border-[var(--jade)] shadow-[0_6px_20px_rgba(36,18,11,0.16)]">
+            <button
+              type="button"
+              onClick={() => {
+                clearCulinaryRoute();
+                setSheetState('full');
+              }}
+              aria-label={isEn ? 'Back' : 'Quay lại'}
+              className="h-9 px-2.5 rounded-xl bg-[var(--bg)] hover:bg-[#F3E5CD] text-[var(--primary)] border border-[var(--gold)]/70 text-xs font-bold flex items-center gap-1 shrink-0 active:scale-95 cursor-pointer whitespace-nowrap"
+            >
+              <ArrowLeft className="w-3.5 h-3.5 shrink-0" />
+              <span>{isEn ? 'Back' : 'Thoát'}</span>
+            </button>
+
+            <div className="min-w-0 flex-1 px-0.5">
+              <div className="font-serif font-bold text-[13px] text-[var(--primary)] truncate leading-tight">
+                {selectedRoutePlace?.name || activeHeritage.name}
+              </div>
+              <div className="text-[11px] font-medium text-[var(--text-muted)] truncate tabular-nums mt-0.5">
+                {isCalculatingRoute ? (
+                  <span>{isEn ? 'Calculating route...' : 'Đang tính tuyến đường...'}</span>
+                ) : activeRoadRoute ? (
+                  <>
+                    <span>{routeTravelMode === 'walking' ? '🚶' : '🛵'} </span>
+                    <strong className="text-[var(--jade)]">{activeRoadRoute.distanceTextVi}</strong>
+                    <span> · ~{activeRoadRoute.durationMinutes} {isEn ? 'min' : 'phút'}</span>
+                    <span> · {routeFromUserGps && userLocation ? (isEn ? 'From GPS' : 'Từ GPS') : (isEn ? 'From Heritage' : 'Từ Di sản')}</span>
+                  </>
+                ) : (
+                  <span>{routeFromUserGps && userLocation ? 'Từ GPS của bạn' : activeHeritage.name}</span>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  if (activeTileMode === 'streets') {
+                    manualVietnamOnlyRef.current = true;
+                    setBaseMode('vietnam_only');
+                  } else {
+                    manualVietnamOnlyRef.current = false;
+                    setBaseMode('streets');
+                  }
+                }}
+                aria-label={activeTileMode === 'streets' ? 'Xem nền Chữ S' : 'Hiện đường phố'}
+                title={activeTileMode === 'streets' ? 'Đổi nền Chữ S' : 'Hiện đường xá'}
+                className={`w-9 h-9 rounded-xl border flex items-center justify-center active:scale-95 cursor-pointer ${
+                  activeTileMode === 'streets'
+                    ? 'bg-[var(--bg)] text-[var(--jade)] border-[var(--gold)]/70'
+                    : 'bg-[var(--primary)] text-[#FFFDF8] border-[var(--gold)]'
+                }`}
+              >
+                <Layers className="w-4 h-4" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  handleActivateCulinaryRoute(
+                    activeHeritage,
+                    selectedRoutePlace?.id,
+                    routeTravelMode,
+                    routeFromUserGps
+                  )
+                }
+                aria-label={isEn ? 'Read voice directions' : 'Nghe thuyết minh đường đi'}
+                title={isEn ? 'Voice directions' : 'Nghe Rồng 3D đọc đường'}
+                className="w-9 h-9 rounded-xl bg-[var(--jade)] text-[#FFFDF8] flex items-center justify-center shadow-sm active:scale-95 cursor-pointer"
+              >
+                <Volume2 className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* Quick Horizontal Destination Switcher */}
+          <div className="pointer-events-auto flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
+            <button
+              type="button"
+              onClick={() =>
+                handleActivateCulinaryRoute(
+                  activeHeritage,
+                  '__HERITAGE__',
+                  routeTravelMode,
+                  true
+                )
+              }
+              className={`h-8 px-2.5 rounded-xl text-[11px] font-bold whitespace-nowrap flex items-center gap-1 shrink-0 border shadow-sm transition-all active:scale-95 cursor-pointer ${
+                selectedRoutePlace?.id === '__HERITAGE__'
+                  ? 'bg-[var(--primary)] text-[#FFFDF8] border-[#FDE68A]'
+                  : 'bg-[#FFFDF8]/95 text-[var(--primary)] border-[var(--gold)]/70'
+              }`}
+            >
+              <span>🏛️</span>
+              <span className="max-w-[115px] truncate">{activeHeritage.name}</span>
+            </button>
+
+            {nearbyPlaces.map((p, idx) => {
+              const isSelected = selectedRoutePlace?.id === p.id;
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() =>
+                    handleActivateCulinaryRoute(
+                      activeHeritage,
+                      p.id,
+                      routeTravelMode,
+                      routeFromUserGps
+                    )
+                  }
+                  className={`h-8 px-2.5 rounded-xl text-[11px] font-bold whitespace-nowrap flex items-center gap-1.5 shrink-0 border shadow-sm transition-all active:scale-95 cursor-pointer ${
+                    isSelected
+                      ? 'bg-[var(--jade)] text-[#FFFDF8] border-[#FDE68A]'
+                      : 'bg-[#FFFDF8]/95 text-[var(--text)] border-[var(--gold)]/70'
+                  }`}
+                >
+                  <span className="w-4 h-4 rounded-full bg-amber-500 text-[#FFFDF8] text-[9.5px] font-black flex items-center justify-center shrink-0">
+                    {idx + 1}
+                  </span>
+                  <span className="max-w-[125px] truncate">{p.name}</span>
+                  <span className={`text-[10px] font-bold tabular-nums ${isSelected ? 'text-[#FDE68A]' : 'text-amber-600'}`}>
+                    ★{p.rating}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : (
+      <div
+        className={`absolute top-0 inset-x-0 z-20 p-2 sm:p-4 pointer-events-none flex flex-col gap-1.5 sm:gap-2 max-w-3xl lg:max-w-[calc(100%-380px)] transition-all duration-200 ${
+          sheetState === 'full'
+            ? 'max-lg:opacity-0 max-lg:-translate-y-3 max-lg:pointer-events-none'
+            : 'opacity-100 translate-y-0'
+        }`}
+      >
         {/* Row 1: Search Input + "Danh sách tỉnh" Button */}
         <div className="flex items-center gap-1.5 sm:gap-2 pointer-events-auto">
           <div
@@ -2587,7 +3330,7 @@ export const CulturalMap: React.FC<CulturalMapProps> = React.memo(({
                 'Tìm tỉnh, thành, di sản...'
               )}
               aria-label="Tìm kiếm tỉnh thành hoặc tên di sản"
-              className="w-full min-h-[44px] pl-9 pr-8 py-2 rounded-2xl bg-stone-950/90 backdrop-blur-md border border-amber-500/40 text-stone-100 placeholder-stone-400 text-[13px] sm:text-sm focus:outline-none focus:border-amber-400 shadow-lg"
+              className="w-full min-h-[40px] sm:min-h-[44px] pl-9 pr-8 py-1.5 sm:py-2 rounded-xl sm:rounded-2xl bg-stone-950/90 backdrop-blur-md border border-amber-500/40 text-stone-100 placeholder-stone-400 text-xs sm:text-sm focus:outline-none focus:border-amber-400 shadow-lg"
             />
             {searchQuery && (
               <button
@@ -2691,16 +3434,16 @@ export const CulturalMap: React.FC<CulturalMapProps> = React.memo(({
               )}
           </div>
 
-          {/* Accessible "Xem danh sách tỉnh" Button (44x44px minimum) */}
+          {/* Accessible "Xem danh sách tỉnh" Button */}
           <button
             type="button"
             data-guide-id="map.provinceListBtn"
             data-guide-type="ui"
             onClick={() => setIsProvinceDrawerOpen(true)}
             aria-label={isEn ? 'Open list of 34 provinces' : 'Mở danh sách 34 tỉnh thành phố'}
-            className="min-h-[44px] min-w-[44px] px-2.5 sm:px-3 rounded-2xl bg-stone-950/90 hover:bg-stone-900 active:scale-95 active:bg-amber-500/20 backdrop-blur-md border border-amber-500/40 text-amber-300 font-semibold text-xs sm:text-sm flex items-center gap-1.5 shadow-lg shrink-0 transition-transform duration-150 cursor-pointer"
+            className="min-h-[40px] sm:min-h-[44px] px-2.5 sm:px-3 rounded-xl sm:rounded-2xl bg-stone-950/90 hover:bg-stone-900 active:scale-95 active:bg-amber-500/20 backdrop-blur-md border border-amber-500/40 text-amber-300 font-bold text-xs sm:text-sm flex items-center gap-1.5 shadow-lg shrink-0 transition-transform duration-150 cursor-pointer"
           >
-            <ListFilter className="w-4 h-4 text-amber-400 shrink-0" />
+            <ListFilter className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-400 shrink-0" />
             <span className="whitespace-nowrap">{isEn ? '34 Provinces' : '34 Tỉnh'}</span>
           </button>
         </div>
@@ -2711,7 +3454,7 @@ export const CulturalMap: React.FC<CulturalMapProps> = React.memo(({
           data-guide-id="map.regionChips"
           data-guide-type="ui"
           aria-label="Lọc bản đồ theo vùng miền"
-          className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto no-scrollbar pointer-events-auto pb-0.5"
+          className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pointer-events-auto pb-0.5"
         >
           {regionChips.map(chip => {
             const isActive = selectedRegion === chip.id && !selectedProvinceName;
@@ -2723,7 +3466,7 @@ export const CulturalMap: React.FC<CulturalMapProps> = React.memo(({
                 aria-selected={isActive}
                 aria-label={`Vùng ${chip.label}`}
                 onClick={() => handleSelectRegionChip(chip.id)}
-                className={`min-h-[44px] px-3 sm:px-3.5 py-1.5 sm:py-2 rounded-2xl text-xs sm:text-sm font-semibold whitespace-nowrap shrink-0 transition-transform duration-150 active:scale-95 cursor-pointer shadow-sm border ${
+                className={`min-h-[34px] sm:min-h-[40px] px-2.5 sm:px-3.5 py-1 sm:py-1.5 rounded-xl sm:rounded-2xl text-xs sm:text-sm font-semibold whitespace-nowrap shrink-0 transition-transform duration-150 active:scale-95 cursor-pointer shadow-sm border ${
                   isActive
                     ? chip.id === 'islands'
                       ? 'bg-[var(--jade)] text-[#FFFDF8] font-bold border-[var(--gold)]'
@@ -2741,10 +3484,10 @@ export const CulturalMap: React.FC<CulturalMapProps> = React.memo(({
               type="button"
               aria-label={`Bỏ chọn tỉnh ${selectedProvinceName}, quay về toàn quốc`}
               onClick={handleResetVietnamView}
-              className="min-h-[44px] px-3 sm:px-3.5 py-1.5 sm:py-2 rounded-2xl text-xs sm:text-sm font-bold whitespace-nowrap shrink-0 bg-[var(--primary)] text-[#FFFDF8] border border-[var(--gold)] flex items-center gap-1.5 shadow-sm active:scale-95 cursor-pointer"
+              className="min-h-[34px] sm:min-h-[40px] px-2.5 sm:px-3.5 py-1 sm:py-1.5 rounded-xl sm:rounded-2xl text-xs sm:text-sm font-bold whitespace-nowrap shrink-0 bg-[var(--primary)] text-[#FFFDF8] border border-[var(--gold)] flex items-center gap-1 shadow-sm active:scale-95 cursor-pointer"
             >
               <span>📍 {selectedProvinceName}</span>
-              <X className="w-4 h-4" />
+              <X className="w-3.5 h-3.5" />
             </button>
           )}
         </div>
@@ -2790,6 +3533,7 @@ export const CulturalMap: React.FC<CulturalMapProps> = React.memo(({
           </div>
         )}
       </div>
+      )}
 
       {/* =====================================================================
           2B. ZERO-LAG DESKTOP CURSOR-FOLLOWING PROVINCE TOOLTIP
@@ -2823,14 +3567,64 @@ export const CulturalMap: React.FC<CulturalMapProps> = React.memo(({
       </div>
 
       {/* =====================================================================
-          3. RIGHT-SIDE THUMB-ZONE CONTROLS (+, -, Về toàn quốc, GPS, Chú giải (i))
-             Minimum 44x44px each, >= 8px (gap-2) spacing
+          3. RIGHT-SIDE THUMB-ZONE CONTROLS
+             - During mobile half-sheet routing: show sleek compact [+ / - / GPS] pill cleanly above the sheet
+             - When sheet collapsed or on desktop: show full map toolbar
       ===================================================================== */}
+      {isCulinaryRouteOpen && sheetState === 'half' && (
+        <div
+          aria-label="Phóng to và định vị GPS nhanh"
+          className="lg:hidden absolute right-2.5 bottom-[calc(46dvh+12px)] z-20 flex flex-col gap-1.5 pointer-events-auto"
+        >
+          <button
+            type="button"
+            aria-label="Phóng to"
+            onClick={() => mapInstanceRef.current?.zoomIn()}
+            className="w-10 h-10 rounded-xl bg-[#FFFDF8]/95 text-[var(--primary)] border border-[var(--gold)] flex items-center justify-center shadow-md active:scale-95 cursor-pointer"
+          >
+            <ZoomIn className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
+            aria-label="Thu nhỏ"
+            onClick={() => mapInstanceRef.current?.zoomOut()}
+            className="w-10 h-10 rounded-xl bg-[#FFFDF8]/95 text-[var(--primary)] border border-[var(--gold)] flex items-center justify-center shadow-md active:scale-95 cursor-pointer"
+          >
+            <ZoomOut className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
+            aria-label="Định vị lại GPS"
+            disabled={isLocating}
+            onClick={() => {
+              if (activeHeritage) {
+                handleActivateCulinaryRoute(
+                  activeHeritage,
+                  selectedRoutePlace?.id,
+                  routeTravelMode,
+                  true,
+                  true
+                );
+              } else {
+                handleRequestGPS();
+              }
+            }}
+            className="w-10 h-10 rounded-xl bg-[var(--jade)] text-[#FFFDF8] border border-[#FFFDF8] flex items-center justify-center shadow-md active:scale-95 cursor-pointer disabled:opacity-60"
+          >
+            <LocateFixed className={`w-4 h-4 ${isLocating ? 'animate-spin' : ''}`} />
+          </button>
+        </div>
+      )}
+
       <div
         data-guide-id="map.zoomControls"
         data-guide-type="ui"
         aria-label="Điều khiển phóng to, thu nhỏ và chú giải bản đồ"
-        className="absolute right-2.5 sm:right-3 lg:right-[364px] bottom-[84px] sm:bottom-28 z-20 flex flex-col gap-2 pointer-events-auto"
+        className={`absolute right-2.5 sm:right-3 lg:right-[364px] bottom-[84px] sm:bottom-28 z-20 flex flex-col gap-1.5 sm:gap-2 transition-opacity duration-200 ${
+          sheetState !== 'collapsed'
+            ? 'max-lg:opacity-0 max-lg:pointer-events-none'
+            : 'pointer-events-auto opacity-100'
+        }`}
       >
         <button
           type="button"
@@ -2867,6 +3661,28 @@ export const CulturalMap: React.FC<CulturalMapProps> = React.memo(({
           className="w-11 h-11 min-w-[44px] min-h-[44px] rounded-2xl bg-stone-950/90 hover:bg-stone-900 active:scale-95 active:bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 flex items-center justify-center shadow-lg backdrop-blur-md transition-transform duration-150 cursor-pointer disabled:opacity-50"
         >
           <LocateFixed className={`w-5 h-5 ${isLocating ? 'animate-spin' : ''}`} />
+        </button>
+
+        <button
+          type="button"
+          aria-label={activeTileMode === 'streets' ? 'Ẩn đường phố, xem bản đồ Chữ S' : 'Hiện đường xá giao thông'}
+          title={activeTileMode === 'streets' ? 'Đang hiện đường xá (chạm để chuyển Chữ S)' : 'Hiện đường xá chi tiết'}
+          onClick={() => {
+            if (activeTileMode === 'streets') {
+              manualVietnamOnlyRef.current = true;
+              setBaseMode('vietnam_only');
+            } else {
+              manualVietnamOnlyRef.current = false;
+              setBaseMode('streets');
+            }
+          }}
+          className={`w-11 h-11 min-w-[44px] min-h-[44px] rounded-2xl border flex items-center justify-center shadow-lg backdrop-blur-md transition-transform duration-150 active:scale-95 cursor-pointer ${
+            activeTileMode === 'streets'
+              ? 'bg-[var(--jade)] text-[#FFFDF8] border-[#FDE68A] font-bold'
+              : 'bg-stone-950/90 text-amber-300 border-amber-500/40 hover:bg-stone-900'
+          }`}
+        >
+          <Layers className="w-5 h-5" />
         </button>
 
         <button
@@ -2976,15 +3792,18 @@ export const CulturalMap: React.FC<CulturalMapProps> = React.memo(({
                   [
                     { id: 'vietnam_only', label: 'Chữ S VN' },
                     { id: 'satellite', label: 'Vệ Tinh' },
-                    { id: 'streets', label: 'Giao Thông' }
+                    { id: 'streets', label: 'Đường Phố' }
                   ] as { id: MapBaseMode; label: string }[]
                 ).map(mode => (
                   <button
                     key={mode.id}
                     type="button"
-                    onClick={() => setBaseMode(mode.id)}
+                    onClick={() => {
+                      manualVietnamOnlyRef.current = mode.id === 'vietnam_only';
+                      setBaseMode(mode.id);
+                    }}
                     className={`min-h-[38px] px-2 py-1.5 rounded-xl text-xs font-semibold transition-colors cursor-pointer ${
-                      baseMode === mode.id
+                      activeTileMode === mode.id
                         ? 'bg-[var(--primary)] text-[#FFFDF8] font-bold'
                         : 'bg-[var(--bg)] text-[var(--text)] hover:bg-[#F3E5CE] border border-[var(--gold)]/50'
                     }`}
@@ -3034,9 +3853,9 @@ export const CulturalMap: React.FC<CulturalMapProps> = React.memo(({
       <section
         aria-label="Thông tin di sản văn hóa"
         style={getSheetTranslateStyle()}
-        className="lg:hidden absolute inset-x-0 bottom-0 h-[88dvh] z-30 bg-stone-950/95 backdrop-blur-md border-t border-amber-500/40 rounded-t-3xl shadow-2xl flex flex-col transition-transform duration-200 ease-out will-change-transform pb-[env(safe-area-inset-bottom,0px)]"
+        className="lg:hidden absolute inset-x-0 bottom-0 h-[94%] z-30 bg-[#FFFDF8]/98 backdrop-blur-md border-t-2 border-[var(--gold)] rounded-t-3xl shadow-[0_-12px_36px_rgba(59,42,32,0.22)] flex flex-col transition-transform duration-200 ease-out will-change-transform text-[var(--text)]"
       >
-        {/* Drag Handle + Header Bar (Always visible in all 3 states, 76px tall) */}
+        {/* Drag Handle + Streamlined Header Bar */}
         <div
           data-guide-id="map.bottomSheet"
           data-guide-type="ui"
@@ -3056,100 +3875,392 @@ export const CulturalMap: React.FC<CulturalMapProps> = React.memo(({
               ? 'Đang mở nửa màn hình, vuốt lên để mở rộng hoặc vuốt xuống để thu gọn'
               : 'Đang mở toàn màn hình, vuốt xuống để thu gọn'
           })`}
-          className="min-h-[76px] px-4 pt-2.5 pb-3 border-b border-stone-800/80 flex flex-col justify-between cursor-grab active:cursor-grabbing shrink-0 select-none"
+          className={`${
+            isCulinaryRouteOpen ? 'min-h-[58px] py-2' : 'min-h-[72px] pt-2 pb-2.5'
+          } px-3.5 border-b border-[var(--gold)]/45 flex flex-col justify-between cursor-grab active:cursor-grabbing shrink-0 select-none`}
         >
           {/* Pill Handle */}
-          <div className="w-11 h-1.5 rounded-full bg-amber-400/50 mx-auto mb-2" />
+          <div className="w-9 h-1 rounded-full bg-[var(--gold)]/65 mx-auto mb-1" />
 
-          <div className="flex items-center justify-between gap-2">
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <h3 className="font-serif font-bold text-stone-100 text-base truncate">
+          {isCulinaryRouteOpen && activeHeritage ? (
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5 text-[12.5px] font-bold text-[var(--jade)] truncate">
+                  <LocateFixed className={`w-3.5 h-3.5 shrink-0 ${isLocating ? 'animate-spin' : ''}`} />
+                  <span className="truncate">
+                    {isLocating
+                      ? isEn
+                        ? 'Locating your GPS...'
+                        : 'Đang lấy tọa độ GPS...'
+                      : routeFromUserGps && userLocation
+                      ? `GPS: ${
+                          userLocation.cityName ||
+                          `${userLocation.lat.toFixed(4)}°B, ${userLocation.lng.toFixed(4)}°Đ`
+                        }${userLocation.accuracy ? ` (±${userLocation.accuracy}m)` : ''}`
+                      : `${isEn ? 'From' : 'Từ'}: ${activeHeritage.name}`}
+                  </span>
+                </div>
+                <p className="text-[11px] text-[var(--text-muted)] truncate mt-0.5">
+                  {activeRoadRoute?.mainStreets && activeRoadRoute.mainStreets.length > 0
+                    ? `Qua ${activeRoadRoute.mainStreets.join(' → ')}`
+                    : isEn
+                    ? 'Select a restaurant or view turn-by-turn steps below'
+                    : 'Chọn quán ngon hoặc xem chi tiết từng ngã rẽ bên dưới'}
+                </p>
+              </div>
+
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={e => {
+                    e.stopPropagation();
+                    handleActivateCulinaryRoute(
+                      activeHeritage,
+                      selectedRoutePlace?.id,
+                      routeTravelMode,
+                      true,
+                      true
+                    );
+                  }}
+                  className="h-8 px-2.5 rounded-xl bg-[var(--jade)] text-[#FFFDF8] text-[11px] font-bold flex items-center gap-1 active:scale-95 whitespace-nowrap cursor-pointer"
+                >
+                  <LocateFixed className={`w-3 h-3 shrink-0 ${isLocating ? 'animate-spin' : ''}`} />
+                  <span>{isEn ? 'Refresh' : 'Định vị'}</span>
+                </button>
+                <button
+                  type="button"
+                  aria-label={sheetState === 'collapsed' ? 'Mở rộng' : 'Thu gọn'}
+                  onClick={e => {
+                    e.stopPropagation();
+                    cycleSheetState();
+                  }}
+                  className="w-8 h-8 rounded-xl bg-[#FBF3E4] hover:bg-[#F3E5CD] text-[var(--primary)] border border-[var(--gold)] flex items-center justify-center active:scale-95 shrink-0 cursor-pointer"
+                >
+                  {sheetState === 'collapsed' ? (
+                    <ChevronUp className="w-4 h-4" />
+                  ) : (
+                    <ChevronDown className="w-4 h-4" />
+                  )}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0 flex-1">
+                <h3 className="font-serif font-bold text-[var(--text)] text-[14px] sm:text-base leading-snug truncate">
                   {sheetState === 'full' && displayActiveHeritage
                     ? displayActiveHeritage.name
                     : activeSelectionTitle}
                 </h3>
-                <span className="text-xs font-mono font-bold text-amber-300 tabular-nums shrink-0">
-                  · {heritagesInView.length} di sản
-                </span>
+                <p className="text-[11px] text-[var(--text-muted)] truncate mt-0.5 flex items-center gap-1.5">
+                  <span className="font-mono font-bold text-[var(--primary)] tabular-nums shrink-0">
+                    {heritagesInView.length} {isEn ? 'sites' : 'di sản'}
+                  </span>
+                  <span aria-hidden="true">·</span>
+                  <span className="truncate">
+                    {sheetState === 'collapsed'
+                      ? isEn
+                        ? 'Swipe up or tap to view list'
+                        : 'Chạm hoặc vuốt lên để xem danh sách'
+                      : sheetState === 'half'
+                      ? isEn
+                        ? 'Tap a heritage site for full details'
+                        : 'Chạm vào di sản để xem chi tiết'
+                      : displayActiveHeritage
+                      ? `${displayActiveHeritage.province} · ${displayActiveHeritage.categoryLabel}`
+                      : isEn
+                      ? 'Cultural heritage list'
+                      : 'Danh sách di sản văn hóa'}
+                  </span>
+                </p>
               </div>
-              <p className="text-xs text-stone-400 truncate mt-0.5">
-                {sheetState === 'collapsed'
-                  ? 'Vuốt lên hoặc chạm để xem danh sách di sản'
-                  : sheetState === 'half'
-                  ? 'Chạm vào một di sản để xem chi tiết đầy đủ'
-                  : displayActiveHeritage
-                  ? `${displayActiveHeritage.province} · ${displayActiveHeritage.categoryLabel}`
-                  : 'Danh sách di sản văn hóa'}
-              </p>
-            </div>
 
-            <div className="flex items-center gap-1.5 shrink-0">
-              {selectedProvinceName && (
+              <div className="flex items-center gap-1.5 shrink-0">
+                {selectedProvinceName && (
+                  <button
+                    type="button"
+                    aria-label="Quay về toàn quốc"
+                    onClick={e => {
+                      e.stopPropagation();
+                      handleResetVietnamView();
+                    }}
+                    className="h-9 px-2.5 rounded-xl bg-[#FBF3E4] hover:bg-[#F3E5CD] text-[var(--primary)] border border-[var(--gold)] text-xs font-bold flex items-center gap-1 active:scale-95 whitespace-nowrap cursor-pointer"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5 shrink-0" />
+                    <span>{isEn ? 'All VN' : 'Toàn quốc'}</span>
+                  </button>
+                )}
+
                 <button
                   type="button"
-                  aria-label="Quay về toàn quốc"
+                  aria-label={sheetState === 'collapsed' ? 'Mở rộng bảng di sản' : 'Thu gọn bảng di sản'}
                   onClick={e => {
                     e.stopPropagation();
-                    handleResetVietnamView();
+                    cycleSheetState();
                   }}
-                  className="min-h-[44px] px-3 rounded-xl bg-stone-900 hover:bg-stone-800 text-amber-300 border border-stone-700 text-xs font-semibold flex items-center gap-1 active:scale-95"
+                  className="w-9 h-9 rounded-xl bg-[#FBF3E4] hover:bg-[#F3E5CD] text-[var(--primary)] border border-[var(--gold)] flex items-center justify-center active:scale-95 shrink-0 cursor-pointer"
                 >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                  <span>Toàn quốc</span>
+                  {sheetState === 'collapsed' ? (
+                    <ChevronUp className="w-4 h-4" />
+                  ) : (
+                    <ChevronDown className="w-4 h-4" />
+                  )}
                 </button>
-              )}
-
-              <button
-                type="button"
-                aria-label={sheetState === 'collapsed' ? 'Mở rộng bảng di sản' : 'Thu gọn bảng di sản'}
-                onClick={e => {
-                  e.stopPropagation();
-                  cycleSheetState();
-                }}
-                className="w-11 h-11 min-w-[44px] min-h-[44px] rounded-xl bg-stone-900 hover:bg-stone-800 text-amber-300 border border-stone-800 flex items-center justify-center active:scale-95"
-              >
-                {sheetState === 'collapsed' ? (
-                  <ChevronUp className="w-5 h-5" />
-                ) : (
-                  <ChevronDown className="w-5 h-5" />
-                )}
-              </button>
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
-        {/* Sheet Body: Either FULL Heritage Detail OR Scrollable Heritage List */}
-        <div className="flex-1 overflow-y-auto overscroll-contain p-4 space-y-3">
-          {sheetState === 'full' && activeHeritage && displayActiveHeritage ? (
+        {/* Sheet Body */}
+        <div className="flex-1 overflow-y-auto overscroll-contain no-scrollbar px-3.5 py-2 space-y-2.5">
+          {isCulinaryRouteOpen && activeHeritage && displayActiveHeritage ? (
+            /* STATE 3B: STREAMLINED MOBILE GPS ROAD NAVIGATION */
+            <div className="space-y-2.5 pb-16">
+              {/* Row 1: Responsive Zero-Clipping Segmented Controls (Fits 100% of any mobile width) */}
+              <div className="grid grid-cols-12 gap-1.5 items-center">
+                <div className="col-span-7 grid grid-cols-2 gap-1 p-0.5 rounded-xl bg-[#F3E5CD]/70 border border-[var(--gold)]/60">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleActivateCulinaryRoute(
+                        activeHeritage,
+                        selectedRoutePlace?.id,
+                        routeTravelMode,
+                        true,
+                        !userLocation
+                      )
+                    }
+                    className={`min-h-[34px] px-1.5 rounded-lg text-[11px] font-bold transition-colors whitespace-nowrap truncate cursor-pointer ${
+                      routeFromUserGps
+                        ? 'bg-[var(--jade)] text-[#FFFDF8] shadow-sm'
+                        : 'text-[var(--text)] hover:bg-[#FFFDF8]/60'
+                    }`}
+                  >
+                    🛰️ {isEn ? 'My GPS' : 'Từ GPS'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleActivateCulinaryRoute(
+                        activeHeritage,
+                        selectedRoutePlace?.id === '__HERITAGE__'
+                          ? nearbyPlaces[0]?.id
+                          : selectedRoutePlace?.id,
+                        routeTravelMode,
+                        false
+                      )
+                    }
+                    className={`min-h-[34px] px-1.5 rounded-lg text-[11px] font-bold transition-colors whitespace-nowrap truncate cursor-pointer ${
+                      !routeFromUserGps
+                        ? 'bg-[var(--primary)] text-[#FFFDF8] shadow-sm'
+                        : 'text-[var(--text)] hover:bg-[#FFFDF8]/60'
+                    }`}
+                  >
+                    🏛️ {isEn ? 'Heritage' : 'Di sản'}
+                  </button>
+                </div>
+
+                <div className="col-span-5 grid grid-cols-2 gap-1 p-0.5 rounded-xl bg-[#F3E5CD]/70 border border-[var(--gold)]/60">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleActivateCulinaryRoute(
+                        activeHeritage,
+                        selectedRoutePlace?.id,
+                        'driving',
+                        routeFromUserGps
+                      )
+                    }
+                    className={`min-h-[34px] px-1.5 rounded-lg text-[11px] font-bold transition-colors whitespace-nowrap truncate cursor-pointer ${
+                      routeTravelMode === 'driving'
+                        ? 'bg-[var(--jade)] text-[#FFFDF8] shadow-sm'
+                        : 'text-[var(--text)] hover:bg-[#FFFDF8]/60'
+                    }`}
+                  >
+                    🛵 {isEn ? 'Drive' : 'Đi xe'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleActivateCulinaryRoute(
+                        activeHeritage,
+                        selectedRoutePlace?.id,
+                        'walking',
+                        routeFromUserGps
+                      )
+                    }
+                    className={`min-h-[34px] px-1.5 rounded-lg text-[11px] font-bold transition-colors whitespace-nowrap truncate cursor-pointer ${
+                      routeTravelMode === 'walking'
+                        ? 'bg-[var(--jade)] text-[#FFFDF8] shadow-sm'
+                        : 'text-[var(--text)] hover:bg-[#FFFDF8]/60'
+                    }`}
+                  >
+                    🚶 {isEn ? 'Walk' : 'Đi bộ'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Row 2: Nearby Eateries Horizontal Strip — Clean Single-Line Header & Full Unclipped Cards */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className="text-xs font-extrabold text-[var(--primary)] whitespace-nowrap">
+                      {isEn ? 'Nearby Eateries' : 'Quán ngon gần đây'}
+                    </span>
+                    <span className="text-[11px] text-[var(--text-muted)] font-medium whitespace-nowrap tabular-nums">
+                      · {nearbyPlaces.length} {isEn ? 'spots' : 'quán'}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => onNavigateToFood(activeHeritage.id)}
+                    className="text-xs font-bold text-[var(--jade)] whitespace-nowrap shrink-0 flex items-center gap-0.5 cursor-pointer"
+                  >
+                    <span>{isEn ? 'All filters' : 'Xem tất cả'}</span>
+                    <ChevronRight className="w-3.5 h-3.5 shrink-0" />
+                  </button>
+                </div>
+
+                <div className="flex items-stretch gap-2 overflow-x-auto no-scrollbar pb-1">
+                  {nearbyPlaces.map((place, idx) => {
+                    const isCurrentRoute = selectedRoutePlace?.id === place.id;
+                    const distKm =
+                      routeFromUserGps && userLocation
+                        ? calculateDistanceKm(userLocation.lat, userLocation.lng, place.lat, place.lng)
+                        : place.distanceKm;
+                    return (
+                      <div
+                        key={place.id}
+                        onClick={() =>
+                          handleActivateCulinaryRoute(
+                            activeHeritage,
+                            place.id,
+                            routeTravelMode,
+                            routeFromUserGps
+                          )
+                        }
+                        className={`w-[224px] shrink-0 p-2.5 rounded-2xl border transition-colors cursor-pointer flex flex-col justify-between gap-1.5 ${
+                          isCurrentRoute
+                            ? 'bg-[#E6F4F1] border-2 border-[var(--jade)] shadow-sm'
+                            : 'bg-[#FBF3E4]/90 border-[var(--gold)]/60'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-1.5">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className="w-5 h-5 rounded-full bg-[var(--primary)] text-[#FFFDF8] text-[10px] font-extrabold flex items-center justify-center shrink-0">
+                              {idx + 1}
+                            </span>
+                            <h5 className="font-serif font-bold text-[12.5px] text-[var(--text)] truncate">
+                              {place.name}
+                            </h5>
+                          </div>
+                          <span className="text-[11px] font-bold text-amber-600 shrink-0 tabular-nums">
+                            ★{place.rating}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-1.5 text-[10.5px]">
+                          <span className="font-medium text-[var(--text-muted)] truncate tabular-nums">
+                            {distKm !== undefined ? `${distKm} km` : ''}
+                            {place.specialties?.[0] ? ` · ${place.specialties[0]}` : ''}
+                          </span>
+                          <span
+                            className={`px-2 py-0.5 rounded-lg font-bold shrink-0 whitespace-nowrap ${
+                              isCurrentRoute
+                                ? 'bg-[var(--jade)] text-[#FFFDF8]'
+                                : 'bg-[var(--primary)]/12 text-[var(--primary)]'
+                            }`}
+                          >
+                            {isCurrentRoute ? 'Đang chỉ đường' : 'Chỉ đường'}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Row 3: Turn-by-Turn Street Directions */}
+              {selectedRoutePlace && activeRoadRoute && (
+                <div className="p-2.5 rounded-2xl bg-[#FBF3E4] border border-[var(--jade)]/65 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-extrabold text-[var(--jade)] whitespace-nowrap">
+                      {isEn ? 'Street Directions' : 'Chi tiết từng ngã rẽ'}
+                    </span>
+                    <span className="text-xs font-bold text-[var(--primary)] whitespace-nowrap tabular-nums">
+                      {activeRoadRoute.distanceTextVi} · ~{activeRoadRoute.durationMinutes}{' '}
+                      {isEn ? 'min' : 'phút'}
+                    </span>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    {activeRoadRoute.steps.map((step, idx) => (
+                      <div
+                        key={idx}
+                        onClick={() => {
+                          setActiveStepIndex(idx);
+                          if (mapInstanceRef.current && step.location) {
+                            mapInstanceRef.current.flyTo(step.location, 17, { duration: 0.5 });
+                          }
+                        }}
+                        className={`p-2 rounded-xl border text-xs flex items-center justify-between gap-2 cursor-pointer transition-colors ${
+                          activeStepIndex === idx
+                            ? 'bg-[#E6F4F1] border-[var(--jade)] font-bold'
+                            : 'bg-[var(--surface)] hover:bg-[#F3E5CD]/60 border-[var(--gold)]/45'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="w-5 h-5 rounded-full bg-[var(--jade)] text-[#FFFDF8] text-[10px] font-extrabold flex items-center justify-center shrink-0">
+                            {step.index}
+                          </span>
+                          <span className="text-[var(--text)] leading-snug">
+                            {isEn ? step.instructionEn : step.instructionVi}
+                          </span>
+                        </div>
+                        <span className="text-[10.5px] font-mono font-bold text-[var(--primary)] shrink-0 tabular-nums">
+                          {step.distanceText}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : sheetState === 'full' && activeHeritage && displayActiveHeritage ? (
             /* STATE 3: FULL SCREEN HERITAGE DETAIL */
-            <div className="space-y-4 pb-8">
-              <div className="flex items-center justify-between gap-2">
+            <div className="space-y-3.5 pb-12">
+              <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
                   onClick={() => {
                     setActiveHeritage(null);
                     setSheetState('half');
                   }}
-                  className="min-h-[44px] px-3.5 py-2 rounded-xl bg-stone-900 hover:bg-stone-800 text-amber-300 border border-stone-800 text-sm font-semibold flex items-center gap-1.5 active:scale-95"
+                  className="h-10 px-3 rounded-xl bg-[#FBF3E4] hover:bg-[#F3E5CD] text-[var(--primary)] border border-[var(--gold)] text-xs font-bold flex items-center justify-center gap-1 active:scale-95 whitespace-nowrap cursor-pointer"
                 >
-                  <ChevronDown className="w-4 h-4 rotate-90" />
-                  <span>Quay lại danh sách ({heritagesInView.length})</span>
+                  <ChevronDown className="w-4 h-4 rotate-90 shrink-0" />
+                  <span className="truncate">
+                    {isEn
+                      ? `Back to List (${heritagesInView.length})`
+                      : `Danh sách (${heritagesInView.length})`}
+                  </span>
                 </button>
 
                 {onSelectHeritage && (
                   <button
                     type="button"
                     onClick={() => onSelectHeritage(activeHeritage)}
-                    className="min-h-[44px] px-3.5 py-2 rounded-xl bg-[var(--primary)] hover:bg-[var(--primary-hover)] text-[#FFFDF8] font-bold text-sm flex items-center gap-1.5 active:scale-95"
+                    className="h-10 px-3 rounded-xl bg-[var(--primary)] hover:bg-[var(--primary-hover)] text-[#FFFDF8] border border-[var(--gold)] font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-sm active:scale-95 whitespace-nowrap cursor-pointer"
                   >
-                    <Sparkles className="w-4 h-4 text-[var(--gold)]" />
-                    <span>Mở hồ sơ lớn</span>
+                    <Sparkles className="w-3.5 h-3.5 text-[var(--gold)] shrink-0" />
+                    <span className="truncate">
+                      {isEn ? 'Full Profile' : 'Xem hồ sơ đầy đủ'}
+                    </span>
                   </button>
                 )}
               </div>
 
-              <div className="relative h-52 sm:h-64 w-full rounded-2xl overflow-hidden bg-stone-900 border border-[var(--gold)]/50">
+              <div className="relative h-44 sm:h-60 w-full rounded-2xl overflow-hidden bg-[#FBF3E4] border border-[var(--gold)]/70 shadow-sm">
                 <img
                   src={getSafeHeritageImageUrl(activeHeritage.imageUrl, activeHeritage.id)}
                   alt={displayActiveHeritage.name}
@@ -3158,60 +4269,63 @@ export const CulturalMap: React.FC<CulturalMapProps> = React.memo(({
                   onError={handleImageError}
                   className="w-full h-full object-cover"
                 />
-              </div>
-
-              <div className="space-y-1">
-                <div className="text-xs text-[var(--primary)] font-semibold">
-                  {displayActiveHeritage.province} · {displayActiveHeritage.categoryLabel}
-                  {displayActiveHeritage.period ? ` · ${displayActiveHeritage.period}` : ''}
+                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/30 to-transparent p-3 pt-8">
+                  <div className="text-[11px] text-[#FFFDF8]/90 font-semibold line-clamp-1">
+                    {displayActiveHeritage.province} · {displayActiveHeritage.categoryLabel}
+                    {displayActiveHeritage.period ? ` · ${displayActiveHeritage.period}` : ''}
+                  </div>
+                  <h4 className="font-serif font-bold text-base sm:text-xl text-[#FFFDF8] leading-snug line-clamp-2">
+                    {displayActiveHeritage.name}
+                  </h4>
                 </div>
-                <h4 className="font-serif font-bold text-xl text-stone-100">
-                  {displayActiveHeritage.name}
-                </h4>
               </div>
 
-              <div className="space-y-2">
-                <h5 className="font-serif font-bold text-[var(--primary)] text-sm">
-                  Ý nghĩa Văn hóa & Lịch sử
+              <div className="p-3 rounded-2xl bg-[#FBF3E4]/75 border border-[var(--gold)]/55 space-y-1.5">
+                <h5 className="font-serif font-bold text-[var(--primary)] text-xs sm:text-sm uppercase tracking-wider">
+                  {isEn ? 'Cultural & Historical Significance' : 'Ý nghĩa Văn hóa & Lịch sử'}
                 </h5>
-                <p className="text-sm sm:text-base text-stone-200 leading-relaxed">
+                <p className="text-xs sm:text-sm text-[var(--text)] leading-relaxed">
                   {displayActiveHeritage.culturalSignificance}
                 </p>
               </div>
 
               {displayActiveHeritage.history && (
-                <div className="space-y-2">
-                  <h5 className="font-serif font-bold text-[var(--primary)] text-sm">
-                    Lịch sử Hình thành
+                <div className="p-3 rounded-2xl bg-[#FBF3E4]/55 border border-[var(--gold)]/45 space-y-1.5">
+                  <h5 className="font-serif font-bold text-[var(--primary)] text-xs sm:text-sm uppercase tracking-wider">
+                    {isEn ? 'Historical Background' : 'Lịch sử Hình thành'}
                   </h5>
-                  <p className="text-sm sm:text-base text-stone-300 leading-relaxed">
+                  <p className="text-xs sm:text-sm text-[var(--text)] leading-relaxed">
                     {displayActiveHeritage.history}
                   </p>
                 </div>
               )}
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-sm">
-                <div className="p-3 rounded-xl bg-stone-900 border border-stone-800 flex items-center gap-2.5">
-                  <Clock className="w-4 h-4 text-amber-400 shrink-0" />
-                  <div>
-                    <span className="text-xs text-stone-400 block">Giờ mở cửa</span>
-                    <span className="text-stone-100 font-medium">
-                      {displayActiveHeritage.visitingHours || '07:30 - 17:30 hàng ngày'}
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div className="p-2.5 rounded-xl bg-[#FBF3E4] border border-[var(--gold)]/60 flex items-start gap-2">
+                  <Clock className="w-4 h-4 text-[var(--primary)] shrink-0 mt-0.5" />
+                  <div className="min-w-0">
+                    <span className="text-[11px] text-[var(--text-muted)] block">
+                      {isEn ? 'Opening Hours' : 'Giờ mở cửa'}
+                    </span>
+                    <span className="text-[var(--text)] font-bold line-clamp-2">
+                      {displayActiveHeritage.visitingHours || '07:30 - 17:30'}
                     </span>
                   </div>
                 </div>
-                <div className="p-3 rounded-xl bg-stone-900 border border-stone-800 flex items-center gap-2.5">
-                  <Ticket className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <div>
-                    <span className="text-xs text-stone-400 block">Giá vé tham khảo</span>
-                    <span className="text-stone-100 font-medium">
-                      {displayActiveHeritage.ticketPrice || 'Mở cửa tự do / Theo quy định'}
+                <div className="p-2.5 rounded-xl bg-[#FBF3E4] border border-[var(--gold)]/60 flex items-start gap-2">
+                  <Ticket className="w-4 h-4 text-[var(--jade)] shrink-0 mt-0.5" />
+                  <div className="min-w-0">
+                    <span className="text-[11px] text-[var(--text-muted)] block">
+                      {isEn ? 'Ticket Info' : 'Giá vé tham khảo'}
+                    </span>
+                    <span className="text-[var(--text)] font-bold line-clamp-2">
+                      {displayActiveHeritage.ticketPrice || (isEn ? 'Open / Standard' : 'Theo quy định')}
                     </span>
                   </div>
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-2.5 pt-2">
+              <div className="grid grid-cols-2 gap-2 pt-1">
                 <button
                   type="button"
                   onClick={() =>
@@ -3221,19 +4335,19 @@ export const CulturalMap: React.FC<CulturalMapProps> = React.memo(({
                       displayActiveHeritage.period
                     )
                   }
-                  className="min-h-[48px] px-4 py-3 rounded-2xl bg-[var(--primary)] hover:bg-[var(--primary-hover)] text-[#FFFDF8] font-bold text-sm flex items-center justify-center gap-2 shadow-md active:scale-95 cursor-pointer"
+                  className="min-h-[44px] px-3 py-2.5 rounded-xl bg-[var(--primary)] hover:bg-[var(--primary-hover)] text-[#FFFDF8] font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 shadow-md active:scale-95 whitespace-nowrap cursor-pointer"
                 >
                   <Volume2 className="w-4 h-4 shrink-0" />
-                  <span>Nghe Kể Chuyện</span>
+                  <span>{isEn ? 'AI Story' : 'Nghe Kể Chuyện'}</span>
                 </button>
 
                 <button
                   type="button"
-                  onClick={() => onNavigateToFood(activeHeritage.id)}
-                  className="min-h-[48px] px-4 py-3 rounded-2xl bg-[var(--jade)] hover:opacity-95 text-[#FFFDF8] font-bold text-sm flex items-center justify-center gap-2 shadow-md active:scale-95 cursor-pointer"
+                  onClick={() => handleActivateCulinaryRoute(activeHeritage)}
+                  className="min-h-[44px] px-3 py-2.5 rounded-xl bg-[var(--jade)] hover:opacity-95 text-[#FFFDF8] font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 shadow-md active:scale-95 whitespace-nowrap cursor-pointer"
                 >
                   <Utensils className="w-4 h-4 shrink-0" />
-                  <span>Ẩm Thực Gần Đây</span>
+                  <span>{isEn ? 'Nearby Cuisine' : 'Ẩm Thực Gần Đây'}</span>
                 </button>
               </div>
             </div>
@@ -3355,7 +4469,248 @@ export const CulturalMap: React.FC<CulturalMapProps> = React.memo(({
           </div>
 
           <div className="flex-1 overflow-y-auto p-3 space-y-2.5 no-scrollbar">
-            {activeHeritage && displayActiveHeritage ? (
+            {isCulinaryRouteOpen && activeHeritage && displayActiveHeritage ? (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    onClick={() => clearCulinaryRoute()}
+                    className="min-h-[38px] px-2.5 py-1.5 rounded-xl bg-stone-900 hover:bg-stone-800 text-amber-300 border border-stone-800 text-xs font-semibold flex items-center gap-1 cursor-pointer"
+                  >
+                    <ArrowLeft className="w-3.5 h-3.5" />
+                    <span>{isEn ? 'Heritage Info' : 'Thông tin Di sản'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onNavigateToFood(activeHeritage.id)}
+                    className="min-h-[38px] px-2.5 py-1.5 rounded-xl bg-[var(--primary)] text-[#FFFDF8] font-bold text-xs flex items-center gap-1 cursor-pointer"
+                  >
+                    <Utensils className="w-3.5 h-3.5" />
+                    <span>{isEn ? 'All Filters' : 'Mở bộ lọc'}</span>
+                  </button>
+                </div>
+
+                {/* Origin & Mode Switcher (Desktop) */}
+                <div className="p-2.5 rounded-2xl bg-stone-900 border border-stone-800 space-y-2">
+                  <div className="flex items-center justify-between gap-2 px-2 py-1 rounded-lg bg-emerald-950/60 border border-emerald-500/40 text-[11px] text-emerald-300">
+                    <span className="truncate font-semibold">
+                      {isLocating
+                        ? '🛰️ Đang định vị GPS...'
+                        : routeFromUserGps && userLocation
+                        ? `🛰️ ${userLocation.cityName || `${userLocation.lat.toFixed(4)}°B, ${userLocation.lng.toFixed(4)}°Đ`}${
+                            userLocation.accuracy ? ` (±${userLocation.accuracy}m)` : ''
+                          }`
+                        : `🏛️ Xuất phát: ${activeHeritage.name}`}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleActivateCulinaryRoute(
+                          activeHeritage,
+                          selectedRoutePlace?.id,
+                          routeTravelMode,
+                          true,
+                          true
+                        )
+                      }
+                      className="px-2 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 text-[#FFFDF8] text-[10px] font-bold shrink-0 cursor-pointer"
+                    >
+                      Định vị lại
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleActivateCulinaryRoute(
+                          activeHeritage,
+                          selectedRoutePlace?.id,
+                          routeTravelMode,
+                          true,
+                          !userLocation
+                        )
+                      }
+                      className={`py-1.5 px-2 rounded-lg text-[11px] font-bold cursor-pointer ${
+                        routeFromUserGps
+                          ? 'bg-[var(--jade)] text-[#FFFDF8]'
+                          : 'bg-stone-950 text-stone-300 border border-stone-800'
+                      }`}
+                    >
+                      🛰️ {isEn ? 'From My GPS' : 'Từ GPS của tôi'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleActivateCulinaryRoute(
+                          activeHeritage,
+                          selectedRoutePlace?.id === '__HERITAGE__'
+                            ? nearbyPlaces[0]?.id
+                            : selectedRoutePlace?.id,
+                          routeTravelMode,
+                          false
+                        )
+                      }
+                      className={`py-1.5 px-2 rounded-lg text-[11px] font-bold cursor-pointer ${
+                        !routeFromUserGps
+                          ? 'bg-[var(--primary)] text-[#FFFDF8]'
+                          : 'bg-stone-950 text-stone-300 border border-stone-800'
+                      }`}
+                    >
+                      🏛️ {isEn ? 'From Heritage' : 'Từ Di sản'}
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleActivateCulinaryRoute(
+                          activeHeritage,
+                          selectedRoutePlace?.id,
+                          'driving',
+                          routeFromUserGps
+                        )
+                      }
+                      className={`py-1.5 px-2 rounded-lg text-[11px] font-bold cursor-pointer ${
+                        routeTravelMode === 'driving'
+                          ? 'bg-[var(--jade)] text-[#FFFDF8]'
+                          : 'bg-stone-950 text-stone-300 border border-stone-800'
+                      }`}
+                    >
+                      🛵 {isEn ? 'Motorbike/Car' : 'Xe máy / Ô tô'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleActivateCulinaryRoute(
+                          activeHeritage,
+                          selectedRoutePlace?.id,
+                          'walking',
+                          routeFromUserGps
+                        )
+                      }
+                      className={`py-1.5 px-2 rounded-lg text-[11px] font-bold cursor-pointer ${
+                        routeTravelMode === 'walking'
+                          ? 'bg-[var(--jade)] text-[#FFFDF8]'
+                          : 'bg-stone-950 text-stone-300 border border-stone-800'
+                      }`}
+                    >
+                      🚶 {isEn ? 'Walking' : 'Đi bộ'}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Nearby Places List (Desktop - No stock food photos) */}
+                <div className="space-y-2">
+                  <div className="text-[11px] font-bold text-amber-300 uppercase tracking-wider">
+                    🍴 {isEn ? 'Nearby Eateries (Click to Route)' : 'Quán ăn gần di sản (Chạm để chỉ đường)'}
+                  </div>
+                  {nearbyPlaces.map((place, idx) => {
+                    const isCurrentRoute = selectedRoutePlace?.id === place.id;
+                    return (
+                      <div
+                        key={place.id}
+                        onClick={() =>
+                          handleActivateCulinaryRoute(
+                            activeHeritage,
+                            place.id,
+                            routeTravelMode,
+                            routeFromUserGps
+                          )
+                        }
+                        className={`p-2.5 rounded-2xl border transition-all cursor-pointer ${
+                          isCurrentRoute
+                            ? 'bg-emerald-950/60 border-emerald-400 shadow-md'
+                            : 'bg-stone-900/90 hover:bg-stone-900 border-stone-800'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className="w-5 h-5 rounded-full bg-amber-500 text-[#FFFDF8] text-[10px] font-extrabold flex items-center justify-center shrink-0">
+                              {idx + 1}
+                            </span>
+                            <h5 className="font-serif font-bold text-xs text-stone-100 truncate">
+                              {place.name}
+                            </h5>
+                          </div>
+                          <span className="text-[11px] font-bold text-amber-300 shrink-0">
+                            ★{place.rating}
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-stone-400 mt-1 truncate">{place.address}</p>
+                        <div className="flex items-center justify-between mt-1.5 text-[10px]">
+                          <span className="text-emerald-300 font-semibold">
+                            Cách {place.distanceKm} km · {place.priceText}
+                          </span>
+                          <span className="text-amber-300 font-bold">
+                            {isCurrentRoute ? '✓ Đang dẫn đường' : 'Chỉ đường →'}
+                          </span>
+                        </div>
+                        {place.specialties && place.specialties.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1.5">
+                            {place.specialties.slice(0, 2).map((sp, i) => (
+                              <span
+                                key={i}
+                                className="text-[9.5px] px-1.5 py-0.5 rounded bg-stone-950 text-stone-300 border border-stone-800"
+                              >
+                                {sp}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Active Road Route Steps (Desktop) */}
+                {selectedRoutePlace && activeRoadRoute && (
+                  <div className="p-3 rounded-2xl bg-stone-900 border border-emerald-500/45 space-y-2">
+                    <div className="flex items-center justify-between border-b border-stone-800 pb-2">
+                      <span className="text-xs font-bold text-emerald-300">
+                        🗺️ {activeRoadRoute.distanceTextVi} (~{activeRoadRoute.durationMinutes} phút)
+                      </span>
+                      <span className="text-[10px] text-amber-300">
+                        {routeTravelMode === 'walking' ? '🚶 Đi bộ' : '🛵 Xe máy/Ô tô'}
+                      </span>
+                    </div>
+                    {activeRoadRoute.mainStreets.length > 0 && (
+                      <div className="text-[11px] text-stone-300">
+                        <span className="text-stone-400">Tuyến đường: </span>
+                        <span className="font-semibold text-amber-200">
+                          {activeRoadRoute.mainStreets.join(' → ')}
+                        </span>
+                      </div>
+                    )}
+                    <div className="space-y-1 max-h-52 overflow-y-auto pr-1">
+                      {activeRoadRoute.steps.map((step, idx) => (
+                        <div
+                          key={idx}
+                          onClick={() => {
+                            setActiveStepIndex(idx);
+                            if (mapInstanceRef.current && step.location) {
+                              mapInstanceRef.current.flyTo(step.location, 16.5, { duration: 0.6 });
+                            }
+                          }}
+                          className={`p-1.5 rounded-xl border text-[11px] flex items-center justify-between gap-2 cursor-pointer ${
+                            activeStepIndex === idx
+                              ? 'bg-emerald-950/80 border-emerald-400 text-emerald-200 font-bold'
+                              : 'bg-stone-950/70 hover:bg-stone-950 border-stone-800 text-stone-200'
+                          }`}
+                        >
+                          <span className="truncate">
+                            {step.index}. {isEn ? step.instructionEn : step.instructionVi}
+                          </span>
+                          <span className="text-[10px] font-mono text-amber-300 shrink-0">
+                            {step.distanceText}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : activeHeritage && displayActiveHeritage ? (
               <div className="space-y-3">
                 <div className="flex items-center justify-between gap-2">
                   <button
@@ -3425,7 +4780,7 @@ export const CulturalMap: React.FC<CulturalMapProps> = React.memo(({
                   </button>
                   <button
                     type="button"
-                    onClick={() => onNavigateToFood(activeHeritage.id)}
+                    onClick={() => handleActivateCulinaryRoute(activeHeritage)}
                     className="min-h-[44px] px-3 py-2 rounded-xl bg-[var(--jade)] hover:opacity-95 text-[#FFFDF8] font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer"
                   >
                     <Utensils className="w-4 h-4" />

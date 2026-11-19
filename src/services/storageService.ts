@@ -46,14 +46,14 @@ const ACTIVITIES_KEY = 'heritageai_activities_log';
 const HERITAGES_KEY = 'heritageai_custom_heritages';
 const PLACES_KEY = 'heritageai_custom_places';
 const TOUR_GUIDE_CONFIG_KEY = 'heritageai_tour_guide_config';
-const LANDMARKS_KEY = 'heritageai_custom_landmarks';
+const LANDMARKS_KEY = 'heritageai_custom_landmarks_v3_video';
 const CUSTOM_STORIES_KEY = 'heritageai_custom_stories';
 const RECOGNITION_CONFIG_KEY = 'heritageai_recognition_section_config';
 const CRAFTS_KEY = 'heritageai_custom_crafts';
 const ARTS_KEY = 'heritageai_custom_arts';
 const PENDING_REG_KEY = 'heritageai_pending_registration';
 const SITE_LOGO_KEY = 'heritageai_site_logo';
-const HOME_BACKGROUNDS_KEY = 'heritageai_home_backgrounds_config';
+const HOME_BACKGROUNDS_KEY = 'heritageai_home_backgrounds_config_v3_video';
 export const DEFAULT_SITE_LOGO = '/hon_dat_viet_logo.webp';
 const LEGACY_SITE_LOGOS = new Set([
   '/Messenger_creation_FDC0246A-CE89-435B-A246-2CBA64ADF7D0.png',
@@ -1480,30 +1480,82 @@ export const storageService = {
   },
 
   // ==========================================
-  // SAVED ITINERARIES
+  // SAVED ITINERARIES (MULTI-SCHEDULE MANAGER)
   // ==========================================
   getSavedItineraries(): ItineraryPlan[] {
     try {
       const data = localStorage.getItem(ITINERARIES_KEY);
-      return data ? JSON.parse(data) : [];
+      const parsed = data ? JSON.parse(data) : [];
+      return Array.isArray(parsed) ? parsed : [];
     } catch {
       return [];
     }
   },
 
-  saveItinerary(itinerary: ItineraryPlan): void {
+  saveItinerary(itinerary: ItineraryPlan, options?: { saveAsNew?: boolean; customTitle?: string }): ItineraryPlan {
     const list = this.getSavedItineraries();
-    const filtered = list.filter(i => i.id !== itinerary.id);
-    filtered.unshift(itinerary);
-    localStorage.setItem(ITINERARIES_KEY, JSON.stringify(filtered));
+    const nowIso = new Date().toISOString();
+    const isSampleId = itinerary.id === 'itinerary-danang-sample-2026';
+    const shouldCreateNewId = Boolean(options?.saveAsNew) || isSampleId || !itinerary.id;
+
+    const finalPlan: ItineraryPlan = {
+      ...itinerary,
+      id: shouldCreateNewId ? `itin-${Date.now()}-${Math.random().toString(36).slice(2, 6)}` : itinerary.id,
+      title: options?.customTitle?.trim() ? options.customTitle.trim() : itinerary.title,
+      createdAt: shouldCreateNewId ? nowIso : (itinerary.createdAt || nowIso),
+      updatedAt: nowIso
+    };
+
+    const existingIdx = list.findIndex(i => i.id === finalPlan.id);
+    let updatedList: ItineraryPlan[];
+    if (existingIdx !== -1 && !shouldCreateNewId) {
+      updatedList = [...list];
+      updatedList[existingIdx] = finalPlan;
+    } else {
+      updatedList = [finalPlan, ...list.filter(i => i.id !== finalPlan.id)];
+    }
+
+    localStorage.setItem(ITINERARIES_KEY, JSON.stringify(updatedList));
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('hdv_itineraries_updated', { detail: updatedList }));
+    }
 
     this.logActivity({
       actionType: 'itinerary',
-      title: 'Lưu lịch trình du lịch',
-      description: `Đã lưu lịch trình "${itinerary.title}" (${itinerary.duration})`,
-      targetId: itinerary.id,
+      title: shouldCreateNewId ? 'Tạo & Lưu lịch trình mới' : 'Cập nhật lịch trình du lịch',
+      description: `Đã lưu lịch trình "${finalPlan.title}" (${finalPlan.destination} • ${finalPlan.duration})`,
+      targetId: finalPlan.id,
       pointsEarned: 30
     });
+
+    return finalPlan;
+  },
+
+  deleteItinerary(id: string): ItineraryPlan[] {
+    const list = this.getSavedItineraries();
+    const updatedList = list.filter(i => i.id !== id);
+    localStorage.setItem(ITINERARIES_KEY, JSON.stringify(updatedList));
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('hdv_itineraries_updated', { detail: updatedList }));
+    }
+    return updatedList;
+  },
+
+  renameItinerary(id: string, newTitle: string): ItineraryPlan[] {
+    const cleanTitle = newTitle.trim();
+    if (!cleanTitle) return this.getSavedItineraries();
+    const list = this.getSavedItineraries();
+    const updatedList = list.map(item =>
+      item.id === id
+        ? { ...item, title: cleanTitle, updatedAt: new Date().toISOString() }
+        : item
+    );
+    localStorage.setItem(ITINERARIES_KEY, JSON.stringify(updatedList));
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('hdv_itineraries_updated', { detail: updatedList }));
+    }
+    return updatedList;
   },
 
   // ==========================================
@@ -1837,20 +1889,25 @@ export const storageService = {
         if (Array.isArray(parsed) && parsed.length > 0) {
           let hasHealed = false;
           const healed = parsed.map((item: CityLandmarkBackground) => {
+            const def = DEFAULT_CITY_LANDMARKS.find(d => d.id === item.id);
             // Heal dummy /images/danang/*.webp placeholder files to real photography
             if (item.imageUrl && item.imageUrl.startsWith('/images/danang/')) {
               hasHealed = true;
               return {
                 ...item,
-                imageUrl: 'https://images.unsplash.com/photo-1559592413-7cec4d0cae2b?auto=format&fit=crop&w=1600&q=85'
+                imageUrl: def?.imageUrl || '/assets/aistudio/hue_imperial_poster_hd.jpg',
+                videoUrl: item.videoUrl || def?.videoUrl
               };
             }
             if (!item.imageUrl || !item.imageUrl.trim()) {
-              const def = DEFAULT_CITY_LANDMARKS.find(d => d.id === item.id);
               if (def) {
                 hasHealed = true;
-                return { ...item, imageUrl: def.imageUrl };
+                return { ...item, imageUrl: def.imageUrl, videoUrl: item.videoUrl || def.videoUrl };
               }
+            }
+            if (!item.videoUrl && def?.videoUrl) {
+              hasHealed = true;
+              return { ...item, videoUrl: def.videoUrl };
             }
             return item;
           });
@@ -1933,9 +1990,21 @@ export const storageService = {
           };
           Object.entries(parsed.sections).forEach(([key, val]) => {
             if (val && typeof val.imageUrl === 'string' && val.imageUrl.trim() && !val.imageUrl.startsWith('/images/danang/')) {
+              const defSec = DEFAULT_HOME_BACKGROUNDS.sections[key];
+              const shouldInjectDefaultVideo =
+                defSec?.videoUrl &&
+                val.videoUrl === undefined &&
+                val.mediaType !== 'image';
               mergedSections[key] = {
-                ...(DEFAULT_HOME_BACKGROUNDS.sections[key] || {}),
-                ...val
+                ...(defSec || {}),
+                ...val,
+                ...(shouldInjectDefaultVideo
+                  ? {
+                      videoUrl: defSec.videoUrl,
+                      imageUrl: defSec.imageUrl,
+                      mediaType: 'video'
+                    }
+                  : {})
               };
             }
           });
@@ -2040,7 +2109,7 @@ export const storageService = {
     const nextConfig: HomeBackgroundConfig = {
       ...current,
       sections: nextSections,
-      useCustomHeroBackground: sectionId === 'hero' ? false : current.useCustomHeroBackground,
+      useCustomHeroBackground: sectionId === 'hero' ? true : current.useCustomHeroBackground,
       updatedAt: new Date().toISOString()
     };
     return this.saveHomeBackgroundConfig(nextConfig);
@@ -2490,72 +2559,95 @@ export const DEFAULT_RECOGNITION_SECTION_CONFIG: RecognitionSectionConfig = {
   ]
 };
 
+export const DEFAULT_HUE_CLEAN_VIDEO = '/assets/aistudio/hue_imperial_hd_clean.mp4';
+export const DEFAULT_HUE_CLEAN_POSTER = '/assets/aistudio/hue_imperial_poster_hd.jpg';
+
 export const DEFAULT_HOME_BACKGROUNDS: HomeBackgroundConfig = {
-  useCustomHeroBackground: false,
+  useCustomHeroBackground: true,
+  ambienceMode: 'auto',
+  enableDynamicEffects: true,
   updatedAt: new Date().toISOString(),
   sections: {
     'hero': {
       sectionId: 'hero',
-      label: '00 · Màn hình Mở đầu (Hero — HỒN ĐẤT VIỆT)',
-      subtitle: 'Toàn cảnh Danh thắng Ngũ Hành Sơn · Ma Nhai · Biển Mỹ Khê Đà Nẵng',
-      imageUrl: 'https://images.unsplash.com/photo-1559592413-7cec4d0cae2b?auto=format&fit=crop&w=1800&q=85',
-      overlayOpacity: 0.42
+      label: '00 · Màn hình Mở đầu & Video Nền Toàn Trang (HỒN ĐẤT VIỆT)',
+      subtitle: 'Toàn cảnh Đại Nội Cung Đình Huế · Ngọ Môn · Di sản Văn hóa Thế giới UNESCO',
+      imageUrl: DEFAULT_HUE_CLEAN_POSTER,
+      videoUrl: DEFAULT_HUE_CLEAN_VIDEO,
+      mediaType: 'video',
+      overlayOpacity: 0.34
     },
     'feature-01-map': {
       sectionId: 'feature-01-map',
       label: '01 · Bản đồ (Chữ S VN)',
-      subtitle: 'Danh thắng Ngũ Hành Sơn (Ngọn Thủy Sơn & Chùa Tam Thai)',
-      imageUrl: 'https://images.unsplash.com/photo-1559592413-7cec4d0cae2b?auto=format&fit=crop&w=1600&q=80',
-      overlayOpacity: 0.42
+      subtitle: 'Toàn cảnh Đại Nội Cung Đình Huế · Ngọ Môn · Di sản Văn hóa Thế giới UNESCO',
+      imageUrl: DEFAULT_HUE_CLEAN_POSTER,
+      videoUrl: DEFAULT_HUE_CLEAN_VIDEO,
+      mediaType: 'video',
+      overlayOpacity: 0.34
     },
     'feature-02-recognizer': {
       sectionId: 'feature-02-recognizer',
       label: '02 · Nhận diện AI (Vision)',
-      subtitle: 'Văn khắc Ma Nhai Ngũ Hành Sơn — Di sản Tư liệu UNESCO',
-      imageUrl: 'https://images.unsplash.com/photo-1548013146-72479768bada?auto=format&fit=crop&w=1600&q=80',
-      overlayOpacity: 0.42
+      subtitle: 'Toàn cảnh Đại Nội Cung Đình Huế · Ngọ Môn · Di sản Văn hóa Thế giới UNESCO',
+      imageUrl: DEFAULT_HUE_CLEAN_POSTER,
+      videoUrl: DEFAULT_HUE_CLEAN_VIDEO,
+      mediaType: 'video',
+      overlayOpacity: 0.34
     },
     'feature-03-storyteller': {
       sectionId: 'feature-03-storyteller',
       label: '03 · Kể chuyện AI',
-      subtitle: 'Biển Mỹ Khê Đà Nẵng lúc bình minh & Bán đảo Sơn Trà',
-      imageUrl: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1600&q=80',
-      overlayOpacity: 0.42
+      subtitle: 'Toàn cảnh Đại Nội Cung Đình Huế · Ngọ Môn · Di sản Văn hóa Thế giới UNESCO',
+      imageUrl: DEFAULT_HUE_CLEAN_POSTER,
+      videoUrl: DEFAULT_HUE_CLEAN_VIDEO,
+      mediaType: 'video',
+      overlayOpacity: 0.34
     },
     'feature-04-itinerary': {
       sectionId: 'feature-04-itinerary',
       label: '04 · Lịch trình',
-      subtitle: 'Cung đường biển Bán đảo Sơn Trà – Mỹ Khê – Ngũ Hành Sơn',
-      imageUrl: 'https://images.unsplash.com/photo-1528127269322-539801943592?auto=format&fit=crop&w=1600&q=80',
-      overlayOpacity: 0.42
+      subtitle: 'Toàn cảnh Đại Nội Cung Đình Huế · Ngọ Môn · Di sản Văn hóa Thế giới UNESCO',
+      imageUrl: DEFAULT_HUE_CLEAN_POSTER,
+      videoUrl: DEFAULT_HUE_CLEAN_VIDEO,
+      mediaType: 'video',
+      overlayOpacity: 0.34
     },
     'feature-05-learning': {
       sectionId: 'feature-05-learning',
       label: '05 · Quiz & Lịch sử',
-      subtitle: 'Làng đá mỹ nghệ Non Nước & Chùa Linh Ứng Ngũ Hành Sơn',
-      imageUrl: 'https://images.unsplash.com/photo-1583417319070-4a69db38a482?auto=format&fit=crop&w=1600&q=80',
-      overlayOpacity: 0.42
+      subtitle: 'Toàn cảnh Đại Nội Cung Đình Huế · Ngọ Môn · Di sản Văn hóa Thế giới UNESCO',
+      imageUrl: DEFAULT_HUE_CLEAN_POSTER,
+      videoUrl: DEFAULT_HUE_CLEAN_VIDEO,
+      mediaType: 'video',
+      overlayOpacity: 0.34
     },
     'feature-06-profile': {
       sectionId: 'feature-06-profile',
       label: '06 · Hồ sơ & Danh hiệu (XP)',
-      subtitle: 'Bia Ma Nhai Ngự bút vua Minh Mạng (1837) trên vách đá Ngũ Hành Sơn',
-      imageUrl: 'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?auto=format&fit=crop&w=1600&q=80',
-      overlayOpacity: 0.42
+      subtitle: 'Toàn cảnh Đại Nội Cung Đình Huế · Ngọ Môn · Di sản Văn hóa Thế giới UNESCO',
+      imageUrl: DEFAULT_HUE_CLEAN_POSTER,
+      videoUrl: DEFAULT_HUE_CLEAN_VIDEO,
+      mediaType: 'video',
+      overlayOpacity: 0.34
     },
     'feature-07-community': {
       sectionId: 'feature-07-community',
       label: '07 · Cộng đồng',
-      subtitle: 'Hoàng hôn Biển Mỹ Khê & Cầu Rồng bên sông Hàn Đà Nẵng',
-      imageUrl: 'https://images.unsplash.com/photo-1509042239860-f550ce710b93?auto=format&fit=crop&w=1600&q=80',
-      overlayOpacity: 0.42
+      subtitle: 'Toàn cảnh Đại Nội Cung Đình Huế · Ngọ Môn · Di sản Văn hóa Thế giới UNESCO',
+      imageUrl: DEFAULT_HUE_CLEAN_POSTER,
+      videoUrl: DEFAULT_HUE_CLEAN_VIDEO,
+      mediaType: 'video',
+      overlayOpacity: 0.34
     },
     'global-tab-banner': {
       sectionId: 'global-tab-banner',
       label: '08 · Ảnh nền chung các Tab khác (Bản đồ, AI, Lịch trình...)',
-      subtitle: 'Ảnh nền làm dịu phía sau các tab chức năng của ứng dụng',
-      imageUrl: 'https://images.unsplash.com/photo-1559592413-7cec4d0cae2b?auto=format&fit=crop&w=1800&q=85',
-      overlayOpacity: 0.40
+      subtitle: 'Đại Nội Cung Đình Huế · Ngọ Môn · Di sản Văn hóa Thế giới UNESCO',
+      imageUrl: DEFAULT_HUE_CLEAN_POSTER,
+      videoUrl: DEFAULT_HUE_CLEAN_VIDEO,
+      mediaType: 'video',
+      overlayOpacity: 0.36
     }
   }
 };
@@ -2567,7 +2659,8 @@ export const DEFAULT_CITY_LANDMARKS: CityLandmarkBackground[] = [
     province: 'Đà Nẵng',
     landmarkName: 'Danh thắng Ngũ Hành Sơn · Ma Nhai · Biển Mỹ Khê',
     tagline: 'Quần thể Danh thắng Quốc gia đặc biệt Ngũ Hành Sơn, Di sản tư liệu Ma Nhai UNESCO và Biển Mỹ Khê quyến rũ',
-    imageUrl: 'https://images.unsplash.com/photo-1559592413-7cec4d0cae2b?auto=format&fit=crop&w=1800&q=85',
+    imageUrl: DEFAULT_HUE_CLEAN_POSTER,
+    videoUrl: DEFAULT_HUE_CLEAN_VIDEO,
     lat: 16.0031,
     lng: 108.2634
   },
@@ -2597,7 +2690,8 @@ export const DEFAULT_CITY_LANDMARKS: CityLandmarkBackground[] = [
     province: 'Thừa Thiên Huế',
     landmarkName: 'Đại Nội Cung Đình Huế & Cổng Ngọ Môn',
     tagline: 'Cố đô vàng son triều Nguyễn - Di sản Văn hóa Thế giới UNESCO',
-    imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/a/ab/Meridian_Gate%2C_Hue_%28I%29.jpg',
+    imageUrl: DEFAULT_HUE_CLEAN_POSTER,
+    videoUrl: DEFAULT_HUE_CLEAN_VIDEO,
     lat: 16.4697,
     lng: 107.5796
   },

@@ -258,12 +258,88 @@
   }
 }
 
+@keyframes hdvKenBurns {
+  0% {
+    transform: scale(1) translate3d(0, 0, 0);
+  }
+  50% {
+    transform: scale(1.035) translate3d(-0.6%, -0.4%, 0);
+  }
+  100% {
+    transform: scale(1) translate3d(0, 0, 0);
+  }
+}
+
+/* Hardware-accelerated crisp rendering for full-screen background video & high-res heritage photography */
+.hdv-crisp-media {
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  transform: translate3d(0, 0, 0);
+  filter: contrast(1.04) saturate(1.06) brightness(1.01);
+  image-rendering: -webkit-optimize-contrast;
+}
+
+@keyframes hdvDongSonSpinSlow {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes hdvDongSonSpinReverse {
+  from {
+    transform: rotate(360deg);
+  }
+  to {
+    transform: rotate(0deg);
+  }
+}
+
+@keyframes hdvFloatParticle {
+  0% {
+    transform: translate3d(0, 20px, 0) scale(0.85);
+    opacity: 0;
+  }
+  25% {
+    opacity: 0.75;
+  }
+  75% {
+    opacity: 0.65;
+  }
+  100% {
+    transform: translate3d(18px, -110px, 0) scale(1.15);
+    opacity: 0;
+  }
+}
+
 .animate-slideUp {
   animation: slideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 .animate-fadeIn {
   animation: fadeIn 0.2s ease-out forwards;
+}
+
+.animate-hdv-kenburns {
+  animation: hdvKenBurns 22s ease-in-out infinite;
+  will-change: transform;
+}
+
+.animate-hdv-dongson-slow {
+  animation: hdvDongSonSpinSlow 72s linear infinite;
+  will-change: transform;
+}
+
+.animate-hdv-dongson-reverse {
+  animation: hdvDongSonSpinReverse 90s linear infinite;
+  will-change: transform;
+}
+
+.animate-hdv-particle {
+  animation: hdvFloatParticle 11s ease-in-out infinite;
+  will-change: transform, opacity;
 }
 
 button, a, input, select, textarea {
@@ -353,6 +429,28 @@ body {
   stroke-width: 2.6px !important;
   stroke-opacity: 1 !important;
   outline: none !important;
+}
+
+/* When viewing street/satellite/topo tiles, keep SVG fill transparent so roads & street names are 100% crisp */
+.hdv-map-tile-mode .leaflet-overlay-pane svg path.hdv-province-path,
+.hdv-map-tile-mode .leaflet-pane svg path.hdv-province-path,
+.hdv-map-tile-mode .leaflet-overlay-pane svg path.hdv-province-path.hdv-province-path--hovered,
+.hdv-map-tile-mode .leaflet-pane svg path.hdv-province-path.hdv-province-path--hovered,
+.hdv-map-tile-mode .leaflet-overlay-pane svg path.hdv-province-path:focus-visible,
+.hdv-map-tile-mode .leaflet-pane svg path.hdv-province-path:focus-visible {
+  fill-opacity: 0 !important;
+  stroke: #B3261E !important;
+  stroke-width: 1.4px !important;
+  stroke-opacity: 0.45 !important;
+}
+
+/* During active GPS/culinary street routing, completely hide coarse province borders so zoomed city streets are clean */
+.hdv-map-routing-mode .leaflet-overlay-pane svg path.hdv-province-path,
+.hdv-map-routing-mode .leaflet-pane svg path.hdv-province-path {
+  fill-opacity: 0 !important;
+  stroke-opacity: 0 !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
 }
 
 .leaflet-zoom-animated {

@@ -17,6 +17,9 @@ import {
   Play,
   SlidersHorizontal,
   X,
+  Star,
+  MapPin,
+  ExternalLink,
 } from 'lucide-react';
 import {
   guideVoiceService,
@@ -32,6 +35,7 @@ import {
 import { VIETNAM_34_ADMINISTRATIVE_UNITS } from '../data/administrativeUnits';
 import { getProvinceIntroText, getHeritageIntroText } from '../data/guideIntroData';
 import { storageService } from '../services/storageService';
+import { triggerInAppMapRoute } from '../services/routeNavigationService';
 import {
   GUIDE_CONTENT,
   SCREEN_ID_BY_TAB,
@@ -39,6 +43,7 @@ import {
   SCREEN_FEATURE_GUIDE_IDS_BY_TAB,
   getGuideContentOrFallback,
   getOrderedAppTourSteps,
+  localizeGuideEntry,
   GuideContentEntry,
 } from '../guideContent';
 
@@ -72,11 +77,11 @@ export type IdleRandomActionType = 'none' | 'look_around' | 'stretch' | 'wave';
 
 export const GUIDE_CHARACTER_CONFIG = {
   // --- HẰNG SỐ GIAO DIỆN & KÍCH THƯỚC (120-190px) ---
-  /** Chiều rộng nhân vật trên mobile (px) */
-  MOBILE_WIDTH_PX: 92,
+  /** Chiều rộng nhân vật trên mobile (px) — nhỏ gọn để không che nút lọc & tiêu đề */
+  MOBILE_WIDTH_PX: 74,
   /** Chiều rộng nhân vật trên máy tính / tablet (px) */
-  DESKTOP_WIDTH_PX: 152,
-  /** Tỉ lệ khung hình dọc (chiều cao / chiều rộng) -> ~115px trên mobile, ~190px trên desktop */
+  DESKTOP_WIDTH_PX: 148,
+  /** Tỉ lệ khung hình dọc (chiều cao / chiều rộng) -> ~92px trên mobile, ~185px trên desktop */
   ASPECT_RATIO: 1.25,
   /** Hệ số phóng to khi cần */
   LARGE_SCALE_MULTIPLIER: 1.25,
@@ -527,6 +532,9 @@ export const GuideCharacter: React.FC<GuideCharacterProps> = ({
   } | null>(null);
   const hasUserInteractedWithAppRef = useRef<boolean>(false);
   const prevActiveTabRef = useRef<string>(activeTab);
+  const prevLanguageRef = useRef<string>(language);
+  const languageRef = useRef<'vi' | 'en'>(isEn ? 'en' : 'vi');
+  languageRef.current = isEn ? 'en' : 'vi';
 
   // Pointer drag tracking refs
   const pointerDownInfoRef = useRef<{
@@ -712,14 +720,15 @@ export const GuideCharacter: React.FC<GuideCharacterProps> = ({
     }
   }, []);
 
-  // Đồng bộ tốc độ đọc và trạng thái tắt tiếng với guideVoiceService
+  // Đồng bộ tốc độ đọc, ngôn ngữ và trạng thái tắt tiếng với guideVoiceService
   useEffect(() => {
+    guideVoiceService.setLanguage(isEn ? 'en' : 'vi');
     guideVoiceService.setRate(prefs.rate);
     guideVoiceService.setMuted(prefs.muted);
     window.dispatchEvent(
       new CustomEvent('hdv_guide_mute_synced', { detail: { muted: prefs.muted } })
     );
-  }, [prefs.rate, prefs.muted]);
+  }, [isEn, prefs.rate, prefs.muted]);
 
   // Lắng nghe sự kiện bật/tắt tiếng từ trang Home Feed
   useEffect(() => {
@@ -858,6 +867,9 @@ export const GuideCharacter: React.FC<GuideCharacterProps> = ({
         runtimeRef.current.mode = payload.targetType === 'greeting' ? 'greeting' : 'speaking';
       }
 
+      const targetSpeechLang: 'vi' | 'en' = payload.lang || languageRef.current;
+      guideVoiceService.setLanguage(targetSpeechLang);
+
       guideVoiceService.speak(payload.introText, {
         onStart: () => {
           setIsPaused(false);
@@ -903,14 +915,45 @@ export const GuideCharacter: React.FC<GuideCharacterProps> = ({
             clearHighlightAndPointing();
           }, 900);
 
-          subtitleHideTimeoutRef.current = window.setTimeout(() => {
-            setShowSubtitle(false);
-          }, GUIDE_CHARACTER_CONFIG.SUBTITLE_AUTO_HIDE_MS);
+          subtitleHideTimeoutRef.current = window.setTimeout(
+            () => {
+              setShowSubtitle(false);
+            },
+            payload.targetType === 'food_recommendation'
+              ? 22000
+              : GUIDE_CHARACTER_CONFIG.SUBTITLE_AUTO_HIDE_MS
+          );
         },
-      });
+      }, targetSpeechLang);
     },
     [aimCharacterGazeAtScreenPoint, clearHighlightAndPointing]
   );
+
+  // Khi người dùng chuyển đổi ngôn ngữ (VN <-> EN): đổi ngay ngôn ngữ giọng nói của nhân vật 3D
+  useEffect(() => {
+    if (prevLanguageRef.current === language) return;
+    prevLanguageRef.current = language;
+    const nextLang: 'vi' | 'en' = language === 'en' ? 'en' : 'vi';
+    guideVoiceService.setLanguage(nextLang);
+    guideVoiceService.stop();
+
+    if (hasUserInteractedWithAppRef.current && !prefs.muted) {
+      const switchGreeting =
+        nextLang === 'en'
+          ? 'Hello! I have switched to English. Touch any province on the map or tap any feature to hear my English narration!'
+          : 'Xin chào! Mình đã chuyển sang giọng thuyết minh Tiếng Việt. Hãy chạm vào bản đồ hoặc các tính năng để nghe mình giới thiệu nhé!';
+      startNarrationWithReaction(
+        {
+          id: `lang-switched-${nextLang}-${Date.now()}`,
+          title: nextLang === 'en' ? '3D Guide · English Mode' : 'HDV 3D · Chế độ Tiếng Việt',
+          introText: switchGreeting,
+          targetType: 'greeting',
+          lang: nextLang,
+        },
+        true
+      );
+    }
+  }, [language, prefs.muted, startNarrationWithReaction]);
 
   // Hàm phát lời giải thích cách dùng giao diện (UI Guide) kèm làm nổi bật phần tử và chỉ tay
   const triggerUiGuideExplanation = useCallback(
@@ -959,14 +1002,16 @@ export const GuideCharacter: React.FC<GuideCharacterProps> = ({
         clearHighlightAndPointing();
       }
 
+      const localizedItem = localizeGuideEntry(item, languageRef.current);
       startNarrationWithReaction(
         {
           id: `ui-guide-${guideId}`,
           guideId,
-          title: item.title,
-          introText: item.say,
-          tip: item.tip,
+          title: localizedItem.title,
+          introText: localizedItem.say,
+          tip: localizedItem.tip,
           targetType: 'ui_guide',
+          lang: languageRef.current,
           screenX,
           screenY,
         },
@@ -976,8 +1021,8 @@ export const GuideCharacter: React.FC<GuideCharacterProps> = ({
     [clearHighlightAndPointing, startNarrationWithReaction, updateHighlightRectFromElement]
   );
 
-  // Danh sách các bước "Tham quan app" được sắp xếp theo thứ tự `order`
-  const orderedTourSteps = React.useMemo(() => getOrderedAppTourSteps(), []);
+  // Danh sách các bước "Tham quan app" được sắp xếp theo thứ tự `order` và ngôn ngữ hiện tại
+  const orderedTourSteps = React.useMemo(() => getOrderedAppTourSteps(language), [language]);
 
   const runTourStepAtIndex = useCallback(
     (index: number) => {
@@ -1109,7 +1154,7 @@ export const GuideCharacter: React.FC<GuideCharacterProps> = ({
       const guideId = closestGuideEl.getAttribute('data-guide-id');
       if (!guideId) return;
 
-      const contentItem = getGuideContentOrFallback(guideId, closestGuideEl);
+      const contentItem = getGuideContentOrFallback(guideId, closestGuideEl, languageRef.current);
 
       if (mode === 'guide') {
         // Chế độ "Hướng dẫn": chặn hành động gốc để giải thích trước và hiện nút "Dùng phần này"
@@ -1136,8 +1181,9 @@ export const GuideCharacter: React.FC<GuideCharacterProps> = ({
           const currentScreenId = SCREEN_ID_BY_TAB[activeTab];
           const targetScreenId = targetTabFromNav ? SCREEN_ID_BY_TAB[targetTabFromNav] : null;
           if (targetScreenId && targetScreenId === currentScreenId) {
-            const screenGuide = GUIDE_CONTENT[currentScreenId];
-            if (screenGuide) {
+            const rawScreenGuide = GUIDE_CONTENT[currentScreenId];
+            if (rawScreenGuide) {
+              const screenGuide = localizeGuideEntry(rawScreenGuide, languageRef.current);
               const primaryGuideId = PRIMARY_GUIDE_ID_BY_TAB[activeTab];
               const primaryEl = primaryGuideId
                 ? document.querySelector<HTMLElement>(`[data-guide-id="${primaryGuideId}"]`)
@@ -1194,8 +1240,9 @@ export const GuideCharacter: React.FC<GuideCharacterProps> = ({
         // ignore
       }
       if (!alreadyPrompted && seenGuideIdsRef.current.size === 0) {
-        const homeGuide = GUIDE_CONTENT['screen.home'];
-        if (homeGuide) {
+        const rawHomeGuide = GUIDE_CONTENT['screen.home'];
+        if (rawHomeGuide) {
+          const homeGuide = localizeGuideEntry(rawHomeGuide, languageRef.current);
           setActiveNarration({
             id: 'welcome-tour-offer',
             guideId: 'screen.home',
@@ -1203,6 +1250,7 @@ export const GuideCharacter: React.FC<GuideCharacterProps> = ({
             introText: homeGuide.say,
             tip: homeGuide.tip,
             targetType: 'ui_guide',
+            lang: languageRef.current,
           });
           setRevealedCharCount(homeGuide.say.length);
           setIsNarrationFinished(true);
@@ -1219,13 +1267,14 @@ export const GuideCharacter: React.FC<GuideCharacterProps> = ({
     }
 
     if (guideModeRef.current === 'off') return;
-    if (performance.now() - lastContentNarrationTimestampRef.current < 450) return;
+    if (performance.now() - lastContentNarrationTimestampRef.current < 2500) return;
 
-    const screenGuide = GUIDE_CONTENT[screenId];
-    if (!screenGuide) return;
+    const rawScreenGuide = GUIDE_CONTENT[screenId];
+    if (!rawScreenGuide) return;
+    const screenGuide = localizeGuideEntry(rawScreenGuide, languageRef.current);
 
     const timer = window.setTimeout(() => {
-      if (performance.now() - lastContentNarrationTimestampRef.current < 450) return;
+      if (performance.now() - lastContentNarrationTimestampRef.current < 2500) return;
       markGuideIdSeen(screenId);
 
       // Tìm phần tử điều khiển chính trên trang vừa mở để tô vòng sáng vàng và cho rồng 3D chỉ tay hướng dẫn
@@ -3332,13 +3381,23 @@ export const GuideCharacter: React.FC<GuideCharacterProps> = ({
       : GUIDE_CHARACTER_CONFIG.DEFAULT_BOTTOM_DESKTOP_PX;
 
     let sheetOffsetPx = 0;
-    if (mapSheetState.sheetState === 'half') {
-      sheetOffsetPx = Math.round((vh * Math.min(mapSheetState.sheetHeightVh || 46, 52)) / 100) + 8;
-    } else if (mapSheetState.sheetState === 'full') {
-      sheetOffsetPx = Math.round(vh * 0.58);
+    if (activeTab === 'map' && isMobileView && mapSheetState.sheetState === 'collapsed') {
+      // Giữ Rồng 3D nằm ngay phía trên thanh tiêu đề thu gọn (76px) + thanh điều hướng dưới (56px)
+      sheetOffsetPx = 140;
+    } else if (activeTab === 'map' && mapSheetState.sheetState === 'half') {
+      if (isMobileView) {
+        const mapCanvasH = Math.max(340, vh - 108);
+        const sheetPx = Math.round((mapCanvasH * Math.min(mapSheetState.sheetHeightVh || 46, 54)) / 100);
+        sheetOffsetPx = 56 + sheetPx + 8;
+      } else {
+        sheetOffsetPx = Math.round((vh * Math.min(mapSheetState.sheetHeightVh || 46, 52)) / 100) + 12;
+      }
+    } else if (activeTab === 'map' && mapSheetState.sheetState === 'full') {
+      // Khi mở toàn màn hình hồ sơ di sản trên mobile, giữ Rồng 3D gọn ở góc dưới bên phải (trên thanh điều hướng dưới)
+      sheetOffsetPx = defaultBottomMargin + 6;
     }
 
-    const minY = 82;
+    const minY = isMobileView ? (activeTab === 'map' ? 124 : 64) : 82;
     const maxY = Math.max(minY, vh - charHeight - Math.max(defaultBottomMargin, sheetOffsetPx));
 
     if (dragPos) {
@@ -3393,6 +3452,7 @@ export const GuideCharacter: React.FC<GuideCharacterProps> = ({
 
     return { x: targetX, y: targetY, effectiveDockSide };
   }, [
+    activeTab,
     charWidth,
     charHeight,
     dragPos,
@@ -3599,7 +3659,7 @@ export const GuideCharacter: React.FC<GuideCharacterProps> = ({
 
     chips.push({
       id: 'replay',
-      label: 'Nghe lại',
+      label: isEn ? 'Replay' : 'Nghe lại',
       icon: 'replay',
       onClick: () => {
         if (highlightedElementRef.current) {
@@ -3623,17 +3683,18 @@ export const GuideCharacter: React.FC<GuideCharacterProps> = ({
           sameProvHeritages[Math.floor(Math.random() * sameProvHeritages.length)];
         chips.push({
           id: `next-${nextH.id}`,
-          label: 'Nghe tiếp',
+          label: isEn ? 'Listen Next' : 'Nghe tiếp',
           icon: 'next',
           onClick: () => {
             triggerGuideNarration({
               id: `heritage-${nextH.id}`,
-              title: nextH.name,
+              title: isEn ? nextH.englishName || nextH.name : nextH.name,
               subtitleBadge: nextH.province,
-              introText: getHeritageIntroText(nextH),
+              introText: getHeritageIntroText(nextH, isEn ? 'en' : 'vi'),
               targetType: 'heritage',
               provinceName: nextH.province,
               heritageId: nextH.id,
+              lang: isEn ? 'en' : 'vi',
             });
           },
         });
@@ -3659,7 +3720,9 @@ export const GuideCharacter: React.FC<GuideCharacterProps> = ({
         if (nearestUnit) {
           chips.push({
             id: `neighbor-${nearestUnit.code}`,
-            label: `Tỉnh lân cận (${nearestUnit.shortName})`,
+            label: isEn
+              ? `Nearby Province (${nearestUnit.shortName})`
+              : `Tỉnh lân cận (${nearestUnit.shortName})`,
             icon: 'neighbor',
             onClick: () => {
               triggerGuideNarration({
@@ -3667,10 +3730,13 @@ export const GuideCharacter: React.FC<GuideCharacterProps> = ({
                 title: nearestUnit.name,
                 introText: getProvinceIntroText(
                   nearestUnit.shortName,
-                  nearestUnit.historicalNotes
+                  nearestUnit.historicalNotes,
+                  undefined,
+                  isEn ? 'en' : 'vi'
                 ),
                 targetType: 'province',
                 provinceName: nearestUnit.shortName,
+                lang: isEn ? 'en' : 'vi',
               });
             },
           });
@@ -3685,17 +3751,18 @@ export const GuideCharacter: React.FC<GuideCharacterProps> = ({
       if (culinaryItem && culinaryItem.id !== activeNarration.heritageId) {
         chips.push({
           id: `food-${culinaryItem.id}`,
-          label: 'Món ăn nổi tiếng',
+          label: isEn ? 'Famous Local Dish' : 'Món ăn nổi tiếng',
           icon: 'food',
           onClick: () => {
             triggerGuideNarration({
               id: `heritage-${culinaryItem.id}`,
-              title: culinaryItem.name,
+              title: isEn ? culinaryItem.englishName || culinaryItem.name : culinaryItem.name,
               subtitleBadge: culinaryItem.province,
-              introText: getHeritageIntroText(culinaryItem),
+              introText: getHeritageIntroText(culinaryItem, isEn ? 'en' : 'vi'),
               targetType: 'heritage',
               provinceName: culinaryItem.province,
               heritageId: culinaryItem.id,
+              lang: isEn ? 'en' : 'vi',
             });
           },
         });
@@ -3707,11 +3774,14 @@ export const GuideCharacter: React.FC<GuideCharacterProps> = ({
       const featureSteps = SCREEN_FEATURE_GUIDE_IDS_BY_TAB[activeTab] || [];
       for (const step of featureSteps) {
         if (step.guideId === activeNarration.guideId) continue;
-        const entry = GUIDE_CONTENT[step.guideId];
-        if (!entry) continue;
+        const rawEntry = GUIDE_CONTENT[step.guideId];
+        if (!rawEntry) continue;
+        const entry = localizeGuideEntry(rawEntry, isEn ? 'en' : 'vi');
         chips.push({
           id: `ui-step-${step.guideId}`,
-          label: `Chỉ: ${step.shortLabel}`,
+          label: isEn
+            ? `Show: ${step.shortLabelEn || step.shortLabel}`
+            : `Chỉ: ${step.shortLabel}`,
           icon: 'next',
           onClick: () => {
             const el = document.querySelector<HTMLElement>(`[data-guide-id="${step.guideId}"]`);
@@ -3733,6 +3803,7 @@ export const GuideCharacter: React.FC<GuideCharacterProps> = ({
   }, [
     activeNarration,
     activeTab,
+    isEn,
     markGuideIdSeen,
     startNarrationWithReaction,
     triggerUiGuideExplanation,
@@ -4100,6 +4171,122 @@ export const GuideCharacter: React.FC<GuideCharacterProps> = ({
             </div>
           )}
 
+        {/* 1B. BONG BÓNG ĐỀ XUẤT ẨM THỰC & QUÁN ĂN GẦN DI SẢN TỪ NHÂN VẬT 3D
+             - Trên Mobile ở tab Bản đồ (activeTab === 'map'): ẩn bong bóng nổi vì Banner trên đỉnh + Bottom Sheet + nút mini dưới chân Rồng 3D đã hiển thị đầy đủ, tránh tuyệt đối chồng chéo */}
+        {showSubtitle &&
+          activeNarration &&
+          activeNarration.targetType === 'food_recommendation' &&
+          !showControlMenu &&
+          !(isMobileView && activeTab === 'map') && (
+            <div
+              data-guide-ignore="true"
+              className={`pointer-events-auto absolute bottom-full mb-2.5 ${
+                isDockedLeft ? 'left-0' : 'right-0'
+              } w-[min(310px,calc(100vw-20px))] sm:w-[345px] bg-[var(--surface)]/98 border-2 border-[var(--gold)] rounded-2xl p-3 shadow-[0_14px_36px_rgba(36,18,11,0.32)] text-[var(--text)] animate-fadeIn z-50`}
+            >
+              <div className="flex items-start justify-between gap-2 pb-2 border-b border-[var(--gold)]/45">
+                <div className="min-w-0">
+                  <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[var(--jade)]/15 text-[var(--jade)] border border-[var(--jade)]/35 text-[10px] font-extrabold uppercase tracking-wider">
+                    <Utensils className="w-3 h-3 shrink-0" />
+                    <span>
+                      {isEn ? '3D Guide Dining Picks' : 'Rồng 3D Đề Xuất Quán Ngon'}
+                    </span>
+                  </div>
+                  <h4 className="font-serif font-bold text-xs sm:text-sm text-[var(--primary)] mt-1 truncate">
+                    {activeNarration.title}
+                  </h4>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => startNarrationWithReaction(activeNarration, true)}
+                    title={isEn ? 'Replay recommendation' : 'Nghe lại đề xuất'}
+                    className="w-6 h-6 rounded-lg bg-[var(--bg)] hover:bg-[#F3E5CE] border border-[var(--gold)]/60 text-[var(--primary)] flex items-center justify-center cursor-pointer"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowSubtitle(false);
+                      handleStopSpeech();
+                    }}
+                    title={isEn ? 'Close' : 'Đóng'}
+                    className="w-6 h-6 rounded-lg bg-[var(--bg)] hover:bg-[var(--primary)]/15 border border-[var(--gold)]/60 text-[var(--text-muted)] hover:text-[var(--primary)] flex items-center justify-center cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+
+              <p className="text-[11px] sm:text-xs text-[var(--text)] leading-relaxed mt-2 line-clamp-2 sm:line-clamp-3">
+                “{activeNarration.introText}”
+              </p>
+
+              {activeNarration.recommendedPlaces &&
+                activeNarration.recommendedPlaces.length > 0 && (
+                  <div className="mt-2 space-y-1.5 max-h-[155px] sm:max-h-[195px] overflow-y-auto pr-0.5">
+                    {activeNarration.recommendedPlaces.map((place, idx) => (
+                      <div
+                        key={place.id || idx}
+                        onClick={() => {
+                          onNavigateTab?.('map');
+                          triggerInAppMapRoute({
+                            heritageId: activeNarration.heritageId || 'ngu-hanh-son-da-nang',
+                            placeId: place.id,
+                            placeName: place.name,
+                          });
+                        }}
+                        className="p-2 rounded-xl bg-[var(--bg)] hover:bg-[#F3E5CE]/70 border border-[var(--gold)]/55 transition-colors cursor-pointer flex items-start justify-between gap-2"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1">
+                            <span className="w-4 h-4 rounded-full bg-[var(--primary)] text-[#FFFDF8] text-[9px] font-extrabold flex items-center justify-center shrink-0">
+                              {idx + 1}
+                            </span>
+                            <span className="font-bold text-[11px] text-[var(--text)] truncate">
+                              {place.name}
+                            </span>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-1.5 mt-0.5 text-[10px] text-[var(--text-muted)]">
+                            <span className="inline-flex items-center gap-0.5 text-amber-600 font-bold">
+                              <Star className="w-2.5 h-2.5 fill-amber-500 text-amber-500" />
+                              {place.rating}
+                            </span>
+                            {place.distanceKm !== undefined && (
+                              <span>• {place.distanceKm} km</span>
+                            )}
+                            {place.specialties && place.specialties[0] && (
+                              <span className="text-[var(--jade)] font-semibold truncate max-w-[140px]">
+                                • {place.specialties[0]}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onNavigateTab?.('map');
+                            triggerInAppMapRoute({
+                              heritageId: activeNarration.heritageId || 'ngu-hanh-son-da-nang',
+                              placeId: place.id,
+                              placeName: place.name,
+                            });
+                          }}
+                          className="px-2 py-1 rounded-lg bg-[var(--jade)] text-[#FFFDF8] text-[10px] font-bold flex items-center gap-1 shrink-0 hover:opacity-95 cursor-pointer"
+                          title={isEn ? 'Route on Web Map' : 'Chỉ đường trực tiếp trên Bản đồ Web'}
+                        >
+                          <MapPin className="w-2.5 h-2.5" />
+                          <span>{isEn ? 'Route' : 'Chỉ đường'}</span>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+            </div>
+          )}
+
         {/* 2. VÙNG CHẠM & CANVAS NHÂN VẬT 3D NỀN TRONG SUỐT THỰC SỰ */}
         <div
           role="button"
@@ -4230,8 +4417,12 @@ export const GuideCharacter: React.FC<GuideCharacterProps> = ({
             <div ref={canvasContainerRef} className="w-full h-full pointer-events-none" />
           )}
 
-          {/* Nhãn gọn dưới chân nhân vật + Các nút điều khiển nhanh (Không hiện khung chữ) */}
-          <div className="pointer-events-auto absolute -bottom-1.5 inset-x-0 flex items-center justify-center gap-1">
+          {/* Nhãn gọn dưới chân nhân vật + Các nút điều khiển nhanh (Neo vào cạnh trong màn hình để không bao giờ bị tràn/cắt mất nút ở mép phải điện thoại) */}
+          <div
+            className={`pointer-events-auto absolute -bottom-1.5 ${
+              isDockedLeft ? 'left-0 justify-start' : 'right-0 justify-end'
+            } flex items-center gap-1 whitespace-nowrap`}
+          >
             <span className="px-2 py-0.5 rounded-full bg-[var(--surface)]/95 border border-[var(--gold)] text-[10px] font-bold text-[var(--primary)] whitespace-nowrap shadow-sm">
               {isDragging
                 ? isEn
@@ -4340,7 +4531,7 @@ export const GuideCharacter: React.FC<GuideCharacterProps> = ({
                 isEn ? 'Open 3D Guide settings' : 'Mở cài đặt chế độ hướng dẫn của HDV 3D'
               }
               title={isEn ? 'Guide settings & App Tour' : 'Cài đặt hướng dẫn & Tham quan app'}
-              className={`w-6 h-6 rounded-full flex items-center justify-center border shadow-sm transition-colors cursor-Urls cursor-pointer ${
+              className={`w-6 h-6 rounded-full flex items-center justify-center border shadow-sm transition-colors cursor-pointer ${
                 showControlMenu || guideMode === 'guide'
                   ? 'bg-[var(--primary)] border-[var(--gold)] text-[#FFFDF8]'
                   : 'bg-[var(--surface)]/95 border-[var(--gold)] text-[var(--primary)] hover:bg-[var(--bg)]'

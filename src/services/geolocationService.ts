@@ -27,7 +27,8 @@ export const CITY_LANDMARK_PRESETS: CityLandmarkBackground[] = [
     province: 'Đà Nẵng',
     landmarkName: 'Ngũ Hành Sơn, Ma Nhai & Biển Mỹ Khê',
     tagline: 'Sắc xanh biển trời Đà Nẵng — Hội tụ Di sản Tư liệu Ma Nhai & bờ biển quyến rũ hành tinh',
-    imageUrl: 'https://images.unsplash.com/photo-1559592413-7cec4d0cae2b?auto=format&fit=crop&w=2000&q=85',
+    imageUrl: '/assets/aistudio/hue_imperial_poster_hd.jpg',
+    videoUrl: '/assets/aistudio/hue_imperial_hd_clean.mp4',
     lat: 16.0471,
     lng: 108.2425
   },
@@ -37,7 +38,7 @@ export const CITY_LANDMARK_PRESETS: CityLandmarkBackground[] = [
     province: 'Hà Nội',
     landmarkName: 'Văn Miếu - Quốc Tử Giám & Hồ Gươm',
     tagline: 'Thủ đô ngàn năm văn hiến, lắng đọng hào khí Thăng Long',
-    imageUrl: 'https://images.unsplash.com/photo-1599707367072-cd6ada2bc375?auto=format&fit=crop&w=2000&q=85',
+    imageUrl: 'https://images.unsplash.com/photo-1599707367072-cd6ada2bc375?auto=format&fit=crop&w=2000&q=90',
     lat: 21.0285,
     lng: 105.8542
   },
@@ -47,7 +48,7 @@ export const CITY_LANDMARK_PRESETS: CityLandmarkBackground[] = [
     province: 'TP. Hồ Chí Minh',
     landmarkName: 'Dinh Độc Lập & Bến Bạch Đằng',
     tagline: 'Đô thị phương Nam phồn hoa, giao thoa truyền thống và hiện đại',
-    imageUrl: 'https://images.unsplash.com/photo-1508804185872-d7badad00f7d?auto=format&fit=crop&w=2000&q=85',
+    imageUrl: 'https://images.unsplash.com/photo-1508804185872-d7badad00f7d?auto=format&fit=crop&w=2000&q=90',
     lat: 10.7769,
     lng: 106.7009
   },
@@ -57,7 +58,8 @@ export const CITY_LANDMARK_PRESETS: CityLandmarkBackground[] = [
     province: 'Thừa Thiên Huế',
     landmarkName: 'Đại Nội Cung Đình Huế & Sông Hương',
     tagline: 'Cố đô vàng son triều Nguyễn - Di sản Văn hóa Thế giới',
-    imageUrl: 'https://images.unsplash.com/photo-1583417319070-4a69db38a482?auto=format&fit=crop&w=2000&q=85',
+    imageUrl: '/assets/aistudio/hue_imperial_poster_hd.jpg',
+    videoUrl: '/assets/aistudio/hue_imperial_hd_clean.mp4',
     lat: 16.4637,
     lng: 107.5909
   },
@@ -399,10 +401,11 @@ export const geolocationService = {
   /**
    * Yêu cầu quyền định vị GPS từ trình duyệt với cơ chế tự động thử lại (Fallback) và Giải mã địa lý (Reverse Geocoding)
    */
-  async requestCurrentPosition(): Promise<{
+  async requestCurrentPosition(forceFresh: boolean = false): Promise<{
     success: boolean;
     location?: UserLocation;
     error?: string;
+    permissionDenied?: boolean;
   }> {
     if (!navigator.geolocation) {
       const ipLoc = await this.fetchIpLocation();
@@ -411,7 +414,7 @@ export const geolocationService = {
       return { success: true, location: defaultLoc || undefined };
     }
 
-    const queryLocation = (highAccuracy: boolean, timeoutMs: number): Promise<{
+    const queryLocation = (highAccuracy: boolean, timeoutMs: number, maxAgeMs: number): Promise<{
       success: boolean;
       lat?: number;
       lng?: number;
@@ -433,13 +436,13 @@ export const geolocationService = {
             let errorMsg = 'Không thể lấy định vị.';
             switch (error.code) {
               case error.PERMISSION_DENIED:
-                errorMsg = 'Quyền truy cập định vị đã bị từ chối hoặc bị hạn chế bởi trình duyệt / thiết bị.';
+                errorMsg = 'Quyền truy cập GPS đã bị từ chối trên trình duyệt / thiết bị.';
                 break;
               case error.POSITION_UNAVAILABLE:
-                errorMsg = 'Tín hiệu GPS/định vị tạm thời không khả dụng trên thiết bị này.';
+                errorMsg = 'Tín hiệu GPS tạm thời không khả dụng trên thiết bị này.';
                 break;
               case error.TIMEOUT:
-                errorMsg = 'Yêu cầu định vị đã quá thời gian chờ (Timeout).';
+                errorMsg = 'Yêu cầu định vị GPS đã quá thời gian chờ.';
                 break;
             }
             resolve({ success: false, error: errorMsg, code: error.code });
@@ -447,37 +450,44 @@ export const geolocationService = {
           {
             enableHighAccuracy: highAccuracy,
             timeout: timeoutMs,
-            maximumAge: 120000
+            maximumAge: maxAgeMs
           }
         );
       });
     };
 
-    // Bước 1: Thử nghiệm lấy định vị bằng GPS chính xác cao
-    let gpsRes = await queryLocation(true, 4500);
+    // Bước 1: Lấy định vị bằng GPS chính xác cao (dành cho dẫn đường thực tế)
+    let gpsRes = await queryLocation(true, 9000, forceFresh ? 0 : 15000);
 
-    // Bước 2: Nếu thất bại do timeout hoặc không khả dụng, thử lại bằng Wi-Fi/IP (độ chính xác thường) để tránh lỗi cứng
-    if (!gpsRes.success && gpsRes.code !== 1) { // 1 là PERMISSION_DENIED (Người dùng từ chối hẳn)
-      console.warn('GPS high accuracy timed out or unavailable. Retrying with standard accuracy...');
-      gpsRes = await queryLocation(false, 8000);
+    // Bước 2: Nếu thất bại do timeout hoặc không khả dụng, thử lại bằng Wi-Fi/Trạm phát sóng (vẫn là tọa độ thực của thiết bị)
+    if (!gpsRes.success && gpsRes.code !== 1) {
+      console.warn('GPS high accuracy timed out or unavailable. Retrying with standard device location...');
+      gpsRes = await queryLocation(false, 9000, 30000);
     }
 
     if (!gpsRes.success || gpsRes.lat === undefined || gpsRes.lng === undefined) {
+      const permissionDenied = gpsRes.code === 1;
       // Tự động thử chuyển sang IP geolocation
       const ipLoc = await this.fetchIpLocation();
       if (ipLoc) {
-        return { success: true, location: ipLoc };
+        return { success: true, location: ipLoc, error: gpsRes.error, permissionDenied };
       }
 
-      // Tự động nạp vị trí mẫu (Hà Nội) nếu cả GPS và IP đều bị hạn chế
+      // Trả về vị trí GPS đã lưu trước đó nếu có
+      const lastKnown = this.getLastKnownLocation();
+      if (lastKnown) {
+        return { success: true, location: lastKnown, error: gpsRes.error, permissionDenied };
+      }
+
       const presetLoc = this.setPresetLocation('hanoi');
       if (presetLoc) {
-        return { success: true, location: presetLoc };
+        return { success: true, location: presetLoc, error: gpsRes.error, permissionDenied };
       }
 
       return {
         success: false,
-        error: gpsRes.error || 'Không thể xác định vị trí hiện tại.'
+        error: gpsRes.error || 'Không thể xác định vị trí hiện tại.',
+        permissionDenied
       };
     }
 
@@ -485,7 +495,7 @@ export const geolocationService = {
     const lng = gpsRes.lng;
     const accuracy = gpsRes.accuracy || 0;
 
-    // Bước 3: Chạy giải mã địa lý ngược nâng cao qua API hoặc tìm thành phố gần nhất mặc định
+    // Bước 3: Giải mã địa lý ngược (Reverse Geocoding) lấy tên đường / phường / thành phố thực tế
     let cityName = this.detectNearestCity(lat, lng);
     try {
       const realCity = await this.reverseGeocodeCity(lat, lng);
@@ -507,6 +517,69 @@ export const geolocationService = {
 
     this.saveLocation(location);
     return { success: true, location };
+  },
+
+  /**
+   * Bật định vị GPS trực tiếp phục vụ dẫn đường trên bản đồ (ưu tiên tọa độ vệ tinh GPS thực tế, không tự ý ghi đè bằng preset giả)
+   */
+  async requestLiveGpsForNavigation(forceFresh: boolean = true): Promise<{
+    success: boolean;
+    location?: UserLocation;
+    isRealGps: boolean;
+    error?: string;
+  }> {
+    const res = await this.requestCurrentPosition(forceFresh);
+    if (res.success && res.location) {
+      return {
+        success: true,
+        location: res.location,
+        isRealGps: res.location.source === 'gps',
+        error: res.error
+      };
+    }
+    return {
+      success: false,
+      isRealGps: false,
+      error: res.error || 'Không thể bật định vị GPS.'
+    };
+  },
+
+  /**
+   * Theo dõi vị trí GPS thời gian thực (Live Tracking) khi người dùng đang di chuyển theo chỉ đường trên bản đồ
+   */
+  watchLivePosition(onUpdate: (loc: UserLocation) => void): () => void {
+    if (!navigator.geolocation) {
+      return () => {};
+    }
+    const watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
+        const accuracy = Math.round(position.coords.accuracy || 0);
+        const existing = this.getLastKnownLocation();
+        const location: UserLocation = {
+          lat,
+          lng,
+          accuracy,
+          cityName: existing?.source === 'gps' && existing.cityName ? existing.cityName : this.detectNearestCity(lat, lng),
+          source: 'gps',
+          timestamp: Date.now()
+        };
+        this.saveLocation(location);
+        onUpdate(location);
+      },
+      () => {
+        // Ignore transient watch errors; keep last known position
+      },
+      {
+        enableHighAccuracy: true,
+        maximumAge: 3000,
+        timeout: 15000
+      }
+    );
+    return () => {
+      navigator.geolocation.clearWatch(watchId);
+    };
   },
 
   /**
@@ -642,14 +715,14 @@ export const geolocationService = {
   },
 
   /**
-   * Phân giải tên quận/thành phố chi tiết từ tọa độ thực tế (Reverse Geocoding)
+   * Phân giải tên đường / phường / quận / thành phố chi tiết từ tọa độ GPS thực tế (Reverse Geocoding)
    */
   async reverseGeocodeCity(lat: number, lng: number): Promise<string | null> {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 2500);
+      const timeoutId = setTimeout(() => controller.abort(), 3000);
       const res = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=10&accept-language=vi`,
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=16&accept-language=vi`,
         { signal: controller.signal }
       );
       clearTimeout(timeoutId);
@@ -657,7 +730,12 @@ export const geolocationService = {
         const data = await res.json();
         const addr = data?.address;
         if (addr) {
-          return addr.city || addr.state || addr.province || addr.town || addr.county || null;
+          const streetPart = addr.road || addr.suburb || addr.quarter || addr.neighbourhood || addr.village || '';
+          const cityPart = addr.city || addr.state || addr.province || addr.town || addr.county || '';
+          if (streetPart && cityPart && !cityPart.includes(streetPart)) {
+            return `${streetPart}, ${cityPart}`;
+          }
+          return cityPart || streetPart || null;
         }
       }
     } catch {

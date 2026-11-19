@@ -14,20 +14,10 @@ export interface AIModelProfile {
 export const AI_MODEL_PROFILES: AIModelProfile[] = [
   // Gemini Models (Google)
   {
-    id: 'gemini-flash-latest',
+    id: 'gemini-4-hydrogen',
     provider: 'gemini',
-    name: 'Gemini Flash (Latest)',
-    description: 'Mô hình mặc định tốc độ cao, đa phương tiện và hiểu tiếng Việt rất tốt',
-    tier: 'free_tier',
-    supportsVietnamese: true,
-    supportsText: true,
-    supportsVision: true
-  },
-  {
-    id: 'gemini-3.8-flash',
-    provider: 'gemini',
-    name: 'Gemini 3.8 Flash',
-    description: 'Mô hình ổn định chuyên xử lý văn bản, câu hỏi dài và phân tích dữ liệu',
+    name: 'Gemini 4 Hydrogen (Flash Siêu Tốc)',
+    description: 'Mô hình thế hệ mới tốc độ cực nhanh (Low-Latency), đa phương tiện và hiểu tiếng Việt xuất sắc',
     tier: 'free_tier',
     supportsVietnamese: true,
     supportsText: true,
@@ -36,18 +26,18 @@ export const AI_MODEL_PROFILES: AIModelProfile[] = [
   {
     id: 'gemini-3.1-flash-lite',
     provider: 'gemini',
-    name: 'Gemini 3.1 Flash Lite',
-    description: 'Mô hình siêu nhẹ, phản hồi nhanh, tối ưu cho hội thoại đơn giản',
+    name: 'Gemini 3.1 Flash Lite (Tức thì)',
+    description: 'Mô hình siêu nhẹ độ trễ thấp nhất (~300ms), tối ưu cho tìm kiếm & gợi ý tức thì',
     tier: 'free_tier',
     supportsVietnamese: true,
     supportsText: true,
-    supportsVision: false
+    supportsVision: true
   },
   {
-    id: 'gemini-2.5-pro',
+    id: 'gemini-flash-latest',
     provider: 'gemini',
-    name: 'Gemini 2.5 Pro',
-    description: 'Mô hình suy luận chuyên sâu, phân tích lịch sử tư liệu phức tạp',
+    name: 'Gemini Flash (Tương thích)',
+    description: 'Bí danh tự động định tuyến sang Gemini 4 Hydrogen tốc độ cao',
     tier: 'free_tier',
     supportsVietnamese: true,
     supportsText: true,

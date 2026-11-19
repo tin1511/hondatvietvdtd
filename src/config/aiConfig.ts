@@ -37,11 +37,11 @@ export const STORAGE_KEY_AI_CONFIG = 'heritage_ai_config';
 // Safe default values from environment variables or defaults
 export const DEFAULT_AI_CONFIG: AIConfig = {
   provider: (import.meta.env?.VITE_AI_PROVIDER as AIProvider) || 'gemini',
-  model: import.meta.env?.VITE_AI_MODEL || 'gemini-flash-latest',
+  model: import.meta.env?.VITE_AI_MODEL || 'gemini-4-hydrogen',
   fallbackProvider: (import.meta.env?.VITE_AI_FALLBACK_PROVIDER as AIProvider) || 'gemini',
-  fallbackModel: import.meta.env?.VITE_AI_FALLBACK_MODEL || 'gemini-3.8-flash',
+  fallbackModel: import.meta.env?.VITE_AI_FALLBACK_MODEL || 'gemini-3.1-flash-lite',
   temperature: 0.7,
-  maxTokens: 2048,
+  maxTokens: 1024,
   baseUrl: import.meta.env?.VITE_AI_BASE_URL || '',
   systemPrompt: DEFAULT_SYSTEM_PROMPT
 };

@@ -21,7 +21,7 @@ export async function testFirestoreConnection() {
       setTimeout(() => reject(new Error('connection_timeout')), 3500)
     );
     await Promise.race([
-      getDocFromServer(doc(db, 'test', 'connection')),
+      getDocFromServer(doc(db, 'system_config', 'ai_config')),
       timeoutPromise
     ]);
     console.log("🔥 Kết nối thành công tới Firebase Firestore!");

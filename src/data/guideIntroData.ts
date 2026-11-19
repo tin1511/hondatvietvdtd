@@ -1,15 +1,13 @@
-import { HeritageItem } from '../types';
+import { HeritageItem, PlaceItem } from '../types';
 
 /**
  * ============================================================================
  * DỮ LIỆU THUYẾT MINH TĨNH CHO HƯỚNG DẪN VIÊN 3D (<GuideCharacter />)
+ * HỖ TRỢ SONG NGỮ TIẾNG VIỆT (VI) & TIẾNG ANH (EN)
  * ============================================================================
  * - Hoàn toàn sử dụng dữ liệu tĩnh có sẵn trong ứng dụng (KHÔNG gọi AI lúc chạy).
  * - Mỗi lời giới thiệu có độ dài 3–5 câu (~30–45 giây đọc thuyết minh tự nhiên).
- * - Bạn có thể thêm hoặc sửa trực tiếp nội dung thuyết minh tại:
- *   1. Bảng `PROVINCE_INTROS` bên dưới cho 34 tỉnh/thành phố và 2 quần đảo.
- *   2. Bảng `HERITAGE_INTROS` bên dưới hoặc trường `intro?: string` trực tiếp
- *      trên từng đối tượng `HeritageItem` trong `src/data/vietnamHeritageData.ts`.
+ * - Tự động chuyển sang Tiếng Anh khi ngôn ngữ ứng dụng là `en` và Tiếng Việt khi là `vi`.
  */
 
 export const PROVINCE_INTROS: Record<string, string> = {
@@ -32,7 +30,7 @@ export const PROVINCE_INTROS: Record<string, string> = {
   'Thái Nguyên':
     'Chào mừng bạn ghé thăm Thái Nguyên, vùng đất đệ nhất danh trà và là trung tâm căn cứ địa Việt Bắc anh hùng. Tại đây, du khách có thể khám phá Khu di tích lịch sử ATK Định Hóa cùng danh thắng Hồ Ba Bể trong xanh giữa rừng nguyên sinh bạt ngàn. Hương chè Tân Cương thơm ngát và điệu hát Then đàn Tính êm dịu sẽ để lại ấn tượng sâu đậm trong lòng lữ khách.',
   'Lạng Sơn':
-    'Xin chào bạn đến với xứ Lạng, vùng đất địa đầu Tổ quốc nổi tiếng với câu ca Đồng Đăng có phố Kỳ Lừa, có nàng Tô Thị, có chùa Tam Thanh. Lạng Sơn lưu giữ hệ thống ди tích Ải Chi Lăng lịch sử hào hùng cùng Công viên địa chất toàn cầu với những hang động kỳ thú. Sắc hoa đào phai mùa xuân và ẩm thực vùng cao đặc sắc luôn sẵn sàng chào đón bước chân khám phá của bạn.',
+    'Xin chào bạn đến với xứ Lạng, vùng đất địa đầu Tổ quốc nổi tiếng với câu ca Đồng Đăng có phố Kỳ Lừa, có nàng Tô Thị, có chùa Tam Thanh. Lạng Sơn lưu giữ hệ thống di tích Ải Chi Lăng lịch sử hào hùng cùng Công viên địa chất toàn cầu với những hang động kỳ thú. Sắc hoa đào phai mùa xuân và ẩm thực vùng cao đặc sắc luôn sẵn sàng chào đón bước chân khám phá của bạn.',
   'Phú Thọ':
     'Chào mừng bạn về với Phú Thọ, vùng đất Tổ cội nguồn của dân tộc Việt Nam nơi các Vua Hùng dựng nước Văn Lang. Quần thể Di tích Đền Hùng trên núi Nghĩa Lĩnh cùng Tín ngưỡng thờ cúng Hùng Vương và Hát Xoan cổ truyền đã trở thành biểu tượng tâm linh bất diệt của người Việt. Hành trình về đất Tổ còn đưa bạn khám phá vùng văn hóa Mường Hòa Bình và thung lũng Mai Châu thơ mộng.',
   'Bắc Ninh':
@@ -85,6 +83,79 @@ export const PROVINCE_INTROS: Record<string, string> = {
     'Quần đảo Trường Sa là pháo đài tiền tiêu thiêng liêng của Tổ quốc Việt Nam nơi đầu sóng ngọn gió, trực thuộc tỉnh Khánh Hòa. Nơi đây có cột mốc chủ quyền uy nghiêm, những ngôi chùa Việt cổ kính ngân vang tiếng chuông giữa đại dương và những hàng cây bàng vuông kiên cường trước bão tố. Trường Sa mãi mãi là biểu tượng của ý chí bất khuất và tình yêu biển đảo quê hương trong trái tim mỗi người dân đất Việt.',
 };
 
+export const PROVINCE_INTROS_EN: Record<string, string> = {
+  'Hà Nội':
+    'Welcome to Hanoi, the thousand-year-old capital and the historical and cultural heart of Vietnam. Here stand the majestic Imperial Citadel of Thang Long, the ancient Temple of Literature, and the vibrant 36 Old Quarter streets. Strolling around emerald Hoan Kiem Lake and savoring refined northern cuisine, you will experience the timeless elegance of Hanoi across centuries.',
+  'TP. Hồ Chí Minh':
+    'Welcome to Ho Chi Minh City, the most dynamic metropolis of Southern Vietnam with over three hundred years of trading history. The city is home to iconic landmarks including the Independence Palace, Nha Rong Harbor, Ben Thanh Market, and the resilient Cu Chi Tunnels. Its harmonious blend of classic heritage architecture and vibrant modern life creates an unforgettable charm.',
+  'Hải Phòng':
+    'Welcome to Hai Phong, the proud City of Red Flamboyant Flowers at the gateway to the northern sea. This land is forever linked to three glorious naval victories on the historic Bach Dang River and the sacred Nghe Temple. Beyond its rich history, Hai Phong enchants travelers with the breathtaking Cat Ba Archipelago, a UNESCO World Biosphere Reserve.',
+  'Huế':
+    'Warm greetings and welcome to the Ancient Capital of Hue, a poetic land of heritage along the Perfume River and Ngu Binh Mountain. Hue proudly preserves the UNESCO-listed Complex of Hue Monuments, including the Imperial Citadel, royal tombs of the Nguyen Dynasty, and Royal Court Music. Every moss-covered roof tile and royal melody tells the golden story of an imperial era.',
+  'Đà Nẵng':
+    'Welcome to Da Nang, a vibrant coastal city at the heart of Central Vietnam’s Heritage Road. It is renowned for the mystical Marble Mountains, the world-class Museum of Cham Sculpture, the UNESCO Ma Nhai rock inscriptions, and scenic My Khe Beach. From its illuminated iconic bridges, you can easily explore a rich tapestry of coastal and spiritual culture.',
+  'Cần Thơ':
+    'Welcome to Can Tho, the gentle heart of the Mekong Delta waterways. Its most iconic cultural treasure is the Cai Rang Floating Market at dawn, a National Intangible Cultural Heritage reflecting authentic river commerce. Be sure to visit the century-old Binh Thuy Ancient House and listen to soulful Don Ca Tai Tu folk music among lush fruit orchards.',
+  'Lào Cai':
+    'Welcome to Lao Cai, a majestic highland frontier where diverse ethnic cultures of Northwest Vietnam converge. Here rises Mount Fansipan—the Roof of Indochina—above Muong Hoa Valley’s golden terraced rice fields and the historic Hoang A Tuong Palace. The colorful Bac Ha Highland Market offers an unforgettable glimpse into vibrant indigenous traditions.',
+  'Tuyên Quang':
+    'Welcome to Tuyen Quang, a land steeped in revolutionary history at the Tan Trao Special National Relic Site. Together with the majestic Dong Van Karst Plateau Geopark, the sacred Lung Cu Flag Tower, and emerald Na Hang Lake, every winding mountain road blends geological wonders with highland heritage.',
+  'Thái Nguyên':
+    'Welcome to Thai Nguyen, Vietnam’s premier tea-growing land and the historic heart of the Viet Bac revolutionary base. Visitors can explore the Dinh Hoa Historical Site alongside serene Ba Be Lake surrounded by primeval forests. The fragrant aroma of Tan Cuong green tea and soothing Then folk melodies leave a lasting impression on every traveler.',
+  'Lạng Sơn':
+    'Welcome to Lang Son, a storied northern borderland famous for Ky Lua Market, To Thi Mountain, and Tam Thanh Cave Pagoda. Lang Son preserves the heroic Chi Lang Pass and a UNESCO Global Geopark filled with spectacular karst caves. Spring peach blossoms and distinctive highland cuisine await your discovery.',
+  'Phú Thọ':
+    'Welcome to Phu Tho, the ancestral homeland of the Vietnamese nation where the Hung Kings founded the Van Lang state. The Hung Kings Temple Complex on Nghia Linh Mountain, the UNESCO-recognized Hung Kings Worship belief, and ancient Xoan singing stand as eternal symbols of Vietnamese identity.',
+  'Bắc Ninh':
+    'Welcome to Bac Ninh—the ancient Kinh Bac region—celebrated for its scholarly mandarins and UNESCO-listed Quan Ho folk songs. This cultural cradle is home to Dau Pagoda, But Thap Pagoda, Do Temple dedicated to eight Ly Dynasty emperors, and the famous Dong Ho folk woodblock painting village.',
+  'Quảng Ninh':
+    'Welcome to Quang Ninh, where world-famous natural wonders meet the spiritual heart of Vietnamese Zen Buddhism. Ha Long Bay, with thousands of limestone karsts rising from emerald waters, is a celebrated UNESCO World Natural Heritage Site, while sacred Yen Tu Mountain is the birthplace of the Truc Lam Zen sect founded by King-Monk Tran Nhan Tong in the 13th century.',
+  'Hưng Yên':
+    'Welcome to Hung Yen, a land of ancient scholarship once praised in the proverb: First is the Capital, second is Pho Hien. It preserves the historic Pho Hien trading port relics, the masterwork wooden architecture of Keo Pagoda, and the sacred Tran Temple in the Red River Delta.',
+  'Ninh Bình':
+    'Welcome to Ninh Binh, site of the Hoa Lu Ancient Capital of the Dinh, Early Le, and Ly dynasties. The Trang An Landscape Complex is Southeast Asia’s first dual UNESCO World Cultural and Natural Heritage Site, featuring majestic limestone karsts, water caves, and ancient temples.',
+  'Điện Biên':
+    'Welcome to Dien Bien in Vietnam’s far northwest, site of the historic Dien Bien Phu Victory that resonated across the globe. Relic sites such as A1 Hill, the De Castries Bunker, and the Victory Monument honor the nation’s indomitable spirit amidst blooming white Bauhinia flowers and warm Thai Xoe dances.',
+  'Sơn La':
+    'Welcome to Son La, a green gem of the Northwest highlands blessed with cool air and dramatic mountain scenery. Here you can visit the Son La Prison National Relic Site and explore the endless green tea hills and ethnic villages of the Moc Chau Plateau.',
+  'Lai Châu':
+    'Welcome to Lai Chau, home to some of Vietnam’s highest mountain peaks and sea of clouds along the majestic O Quy Ho Pass. Here stand the ancient King Le Loi royal stele by the Da River and the peaceful Sin Suoi Ho community tourism village of over twenty ethnic groups.',
+  'Thanh Hóa':
+    'Welcome to Thanh Hoa, a land of kings and national heroes. Thanh Hoa proudly boasts the UNESCO World Heritage Citadel of the Ho Dynasty built of massive stone blocks, and the sacred Lam Kinh Historic Site of the Later Le Dynasty.',
+  'Nghệ An':
+    'Welcome to Nghe An, a homeland of patriotism, scholarship, and UNESCO-recognized Vi and Giam folk songs. Its most sacred destination is the Kim Lien Relic Site in Nam Dan, preserving the humble childhood home of President Ho Chi Minh alongside the lush Pu Mat National Park.',
+  'Hà Tĩnh':
+    'Welcome to Ha Tinh, the poetic land of Hong Mountain and La River renowned for literary heritage and resilience. Visitors can pay tribute at Dong Loc Junction, visit the Great Poet Nguyen Du Memorial Site, and ascend the ancient Huong Tich Pagoda.',
+  'Quảng Trị':
+    'Welcome to Quang Tri, where sacred historical memories meet world-renowned natural wonders in Central Vietnam. It is home to the Quang Tri Ancient Citadel, the Hien Luong Bridge over the Ben Hai River, and Phong Nha - Ke Bang National Park with Son Doong, the largest cave on Earth.',
+  'Quảng Ngãi':
+    'Welcome to Quang Ngai, stretching from the volcanic outpost of Ly Son Island in the East Sea to the majestic Central Highlands of Kon Tum. Ly Son is famous for the touching Hoang Sa Soldier Commemoration Ceremony, while the highlands echo with UNESCO-listed Gong culture and towering Rong communal houses.',
+  'Gia Lai':
+    'Welcome to Gia Lai, where the vast Central Highlands meet the martial spirit of the Tay Son Dynasty. Admire the emerald waters of Bien Ho Lake, visit the historic Quang Trung Museum, and explore ancient Cham brick sanctuaries such as Twin Towers and Banh It Tower.',
+  'Đắk Lắk':
+    'Welcome to Dak Lak, Vietnam’s coffee capital and heart of the UNESCO Space of Gong Culture in the Central Highlands, now linked with the dramatic basalt columns of Ganh Da Dia on the Phu Yen coast. Experience majestic Dray Nur Waterfall, Lak Lake, and rich Buon Ma Thuot coffee heritage.',
+  'Khánh Hòa':
+    'Welcome to Khanh Hoa, blessed with some of the world’s most scenic bays and enduring Cham Pa heritage. Highlights include the thousand-year-old Ponagar Tower in Nha Trang, Po Klong Garai Tower, emerald Vinh Hy Bay, and the ancient Bau Truc pottery village.',
+  'Lâm Đồng':
+    'Welcome to Lam Dong, uniting the romantic flower city of Da Lat, the Dak Nong Global Geopark, and sunny Mui Ne coast. Here are preserved the UNESCO-listed Nguyen Dynasty Woodblocks, classic highland villas beneath pine forests, and vibrant indigenous Gong traditions.',
+  'Đồng Nai':
+    'Welcome to Dong Nai, a Southern pioneering land with over three centuries of heritage. Discover the Tran Bien Temple of Literature, historic Cu Lao Pho, traditional Bien Hoa pottery villages, and the rich biodiversity of Cat Tien National Park.',
+  'Tây Ninh':
+    'Welcome to Tay Ninh, a spiritual and historical gateway in Southeastern Vietnam. Rising above the plains is Mount Ba Den—the highest peak in Southern Vietnam—alongside the uniquely designed Cao Dai Holy See and the historic Central Office for South Vietnam base.',
+  'Đồng Tháp':
+    'Welcome to Dong Thap, the land of pink lotus blossoms in the Mekong Delta. Explore the Nguyen Sinh Sac Memorial Site, the ancient Go Thap archaeological ruins of the Oc Eo civilization, and the vibrant Sa Dec Flower Village along the Tien River.',
+  'An Giang':
+    'Welcome to An Giang, uniting the mystical Seven Mountains region with the island paradise of Kien Giang and Phu Quoc in Vietnam’s southwest. Visit the sacred Lady Xu Temple at Sam Mountain, Tra Su Cajuput Forest, the ancient Oc Eo - Ba The site, and Pearl Island Phu Quoc.',
+  'Vĩnh Long':
+    'Welcome to Vinh Long between the Tien and Hau branches of the Mekong River. Famous for the Vinh Long Temple of Literature, the red ceramic kilns of Mang Thit, ancient Ang Pagoda Khmer heritage, and the lush coconut waterways of Ben Tre.',
+  'Cà Mau':
+    'Welcome to Ca Mau, the sacred southernmost tip of Vietnam where the nation’s bow meets the sea. At Ca Mau Cape amidst vast mangrove forests, you can watch the sun rise over the East Sea and set over the Western Sea, and listen to the immortal Da Co Hoai Lang melody in Bac Lieu.',
+  'Hoàng Sa':
+    'The Hoang Sa (Paracel) Archipelago is an inseparable, sacred territory of Vietnam in the East Sea under the administration of Da Nang City. For centuries, the royal Hoang Sa Flotillas braved the ocean waves under imperial decree to erect sovereignty markers and safeguard maritime resources. Historical archives, Nguyen Dynasty imperial records, and the Hoang Sa Soldier Commemoration Ceremony stand as eternal proof of Vietnamese sovereignty.',
+  'Trường Sa':
+    'The Truong Sa (Spratly) Archipelago is a sacred frontline outpost of Vietnam in the East Sea under the administration of Khanh Hoa Province. Here stand solemn sovereignty markers, traditional Vietnamese pagodas whose bells echo across the ocean, and resilient square-fruited Barringtonia trees. Truong Sa forever symbolizes the indomitable spirit and love for the homeland’s seas and islands.',
+};
+
 export const HERITAGE_INTROS: Record<string, string> = {
   'ngu-hanh-son-da-nang':
     'Xin chào! Đây là Danh thắng Quốc gia đặc biệt Ngũ Hành Sơn tại Đà Nẵng với sáu ngọn núi Kim, Mộc, Thủy, Dương Hỏa, Âm Hỏa, Thổ Sơn do vua Minh Mạng đặt tên năm 1825, hội tụ hệ thống hang động huyền ảo, chùa cổ và làng đá Non Nước hơn 400 năm tuổi.',
@@ -103,7 +174,7 @@ export const HERITAGE_INTROS: Record<string, string> = {
   'dai-noi-hue':
     'Chào mừng bạn bước vào Đại Nội Huế, trái tim của Quần thể Di tích Cố đô Huế được xây dựng từ đầu thế kỷ mười chín dưới triều vua Gia Long và Minh Mạng. Công trình nổi bật với cổng Ngọ Môn uy nghi, điện Thái Hòa lộng lẫy và Tử Cấm Thành được quy hoạch chuẩn mực theo triết lý phương Đông và nghệ thuật kiến trúc cung đình Việt Nam. Đây là di sản văn hóa đầu tiên của Việt Nam được UNESCO ghi danh vào danh sách Di sản Thế giới năm một nghìn chín trăm chín mươi ba.',
   'pho-co-hoi-an':
-    'Xin chào bạn đến với Phố cổ Hội An, thương cảng quốc tế sầm uất bậc nhất Đông Nam Á từ thế kỷ mười sáu đến thế kỷ mười bảy. Nơi đây vẫn bảo tồn nguyên vẹn hàng trăm ngôi nhà cổ mái ngói âm dương phủ rêu phong, các hội quán華 kiến trúc tinh xảo và biểu tượng Chùa Cầu hơn bốn trăm năm tuổi. Khi màn đêm buông xuống, hàng ngàn chiếc đèn lồng rực rỡ cùng hoa đăng trên dòng sông Hoài tạo nên khung cảnh cổ tích đầy mê hoặc.',
+    'Xin chào bạn đến với Phố cổ Hội An, thương cảng quốc tế sầm uất bậc nhất Đông Nam Á từ thế kỷ mười sáu đến thế kỷ mười bảy. Nơi đây vẫn bảo tồn nguyên vẹn hàng trăm ngôi nhà cổ mái ngói âm dương phủ rêu phong, các hội quán kiến trúc tinh xảo và biểu tượng Chùa Cầu hơn bốn trăm năm tuổi. Khi màn đêm buông xuống, hàng ngàn chiếc đèn lồng rực rỡ cùng hoa đăng trên dòng sông Hoài tạo nên khung cảnh cổ tích đầy mê hoặc.',
   'thanh-dia-my-son':
     'Chào mừng bạn khám phá Khu đền tháp Mỹ Sơn, thánh địa Ấn Độ giáo quan trọng bậc nhất của vương quốc Chăm Pa cổ đại suốt từ thế kỷ thứ tư đến thế kỷ mười ba. Nằm ẩn mình trong thung lũng xanh kín đáo được bao bọc bởi núi non hùng vĩ, Mỹ Sơn quy tụ hơn bảy mươi công trình đền tháp gạch nung với kỹ thuật xây dựng và chạm khắc phù điêu đầy bí ẩn. Quần thể kiến trúc độc đáo này đã được UNESCO công nhận là Di sản Văn hóa Thế giới năm một nghìn chín trăm chín mươi chín.',
   'dinh-doc-lap':
@@ -114,23 +185,71 @@ export const HERITAGE_INTROS: Record<string, string> = {
     'Xin chào bạn đến với Chợ nổi Cái Răng tại Cần Thơ, nét văn hóa giao thương trên sông đặc sắc nhất vùng Đồng bằng sông Cửu Long đã được công nhận là Di sản Văn hóa Phi vật thể Quốc gia. Từ tờ mờ sáng, hàng trăm ghe thuyền chở đầy trái cây miệt vườn tụ họp, treo nông sản lên cây bẹo trước mũi ghe để chào mời khách thương hồ. Thưởng thức một tô bún riêu hay ly cà phê sữa đá ngay trên sóng nước bồng bềnh là trải nghiệm miền Tây không thể nào quên.',
 };
 
+export const HERITAGE_INTROS_EN: Record<string, string> = {
+  'ngu-hanh-son-da-nang':
+    'Welcome to the Marble Mountains (Ngu Hanh Son), a Special National Monument in Da Nang comprising six limestone peaks named after the five elements by Emperor Minh Mang in 1825. This sacred complex brings together mystical grottoes, ancient Buddhist pagodas, and the 400-year-old Non Nuoc stone carving village.',
+  'ma-nhai-ngu-hanh-son':
+    'Welcome to the Ma Nhai Rock Inscriptions at the Marble Mountains in Da Nang! This remarkable collection of 78 Han and Nom inscriptions carved directly into natural cave cliffs from the 17th to the 20th centuries—including royal poems by Emperor Minh Mang—was inscribed on the UNESCO Memory of the World Register in 2022.',
+  'bien-my-khe-da-nang':
+    'Welcome to My Khe Beach in Da Nang! Stretching from the Son Tra Peninsula toward the Marble Mountains with fine white sand and gentle turquoise waves, My Khe was voted by Forbes Magazine as one of the six most attractive beaches on the planet.',
+  'hoang-thanh-thang-long':
+    'Welcome to the Imperial Citadel of Thang Long in Hanoi, the political heart of Vietnam for over a millennium. Built in the 11th century under the Ly Dynasty and expanded through the Tran, Le, and Nguyen dynasties, this monumental site was honored by UNESCO as a World Cultural Heritage Site in 2010.',
+  'van-mieu-quoc-tu-giam':
+    'Welcome to the Temple of Literature (Van Mieu - Quoc Tu Giam), Vietnam’s first national university founded in 1070 under Emperor Ly Thanh Tong. It preserves 82 Stone Steles of Doctoral Laureates recognized by UNESCO as Documentary Heritage, alongside the iconic Khue Van Cac pavilion symbolizing Vietnam’s devotion to learning.',
+  'vinh-ha-long':
+    'Welcome to Ha Long Bay in Quang Ninh Province, a UNESCO World Natural Wonder featuring nearly two thousand limestone islands and magnificent stalactite caves such as Sung Sot and Thien Cung. Beyond its geological splendor, Ha Long Bay is steeped in the legend of the Mother Dragon descending to protect Vietnam.',
+  'trang-an-ninh-binh':
+    'Welcome to the Trang An Landscape Complex in Ninh Binh, Southeast Asia’s first dual UNESCO World Cultural and Natural Heritage Site. Gliding on a traditional sampan through crystal-clear water caves, you will discover majestic limestone peaks and ancient temples from the 10th-century Hoa Lu Capital.',
+  'dai-noi-hue':
+    'Welcome to the Hue Imperial Citadel, the heart of the Complex of Hue Monuments constructed in the early 19th century under Emperors Gia Long and Minh Mang. Featuring the majestic Ngo Mon Gate, Thai Hoa Palace, and the Forbidden Purple City, it became Vietnam’s first UNESCO World Cultural Heritage Site in 1993.',
+  'pho-co-hoi-an':
+    'Welcome to Hoi An Ancient Town, a bustling international trading port from the 16th to 17th centuries. It preserves hundreds of moss-tiled merchant houses, ornate assembly halls, and the 400-year-old Japanese Covered Bridge, glowing with colorful silk lanterns every evening by the Hoai River.',
+  'thanh-dia-my-son':
+    'Welcome to the My Son Sanctuary, the foremost Hindu temple complex of the ancient Champa Kingdom from the 4th to the 13th centuries. Nestled in a lush valley surrounded by mountains, its over seventy fired-brick temple towers were recognized by UNESCO as a World Cultural Heritage Site in 1999.',
+  'dinh-doc-lap':
+    'Welcome to the Independence Palace, a Special National Relic in the heart of Ho Chi Minh City associated with Vietnam’s historic reunification on April 30, 1975. Designed by architect Ngo Viet Thu, the building harmoniously blends modern architecture with traditional Eastern philosophy.',
+  'dia-dao-cu-chi':
+    'Welcome to the Cu Chi Tunnels, an extraordinary underground defense network stretching over 250 kilometers in Ho Chi Minh City. Hand-dug in multiple levels with meeting rooms, smokeless Hoang Cam kitchens, and field clinics, it stands as a testament to Vietnamese ingenuity and resilience.',
+  'cho-noi-cai-rang':
+    'Welcome to Cai Rang Floating Market in Can Tho, the most vibrant river trading culture of the Mekong Delta and a National Intangible Cultural Heritage. Every morning at dawn, hundreds of boats gather to sell fresh tropical fruits, noodle soups, and Vietnamese iced coffee right on the water.',
+};
+
 /**
  * Lấy nội dung thuyết minh 3–5 câu (~30–45 giây) cho Tỉnh/Thành phố hoặc Quần đảo.
+ * Tự động trả về Tiếng Anh khi `language === 'en'` và Tiếng Việt khi `language === 'vi'`.
  */
 export function getProvinceIntroText(
   provinceName: string,
   descriptionFallback?: string,
-  heritageCount?: number
+  heritageCount?: number,
+  language: string = 'vi'
 ): string {
+  const isEn = language === 'en';
   const cleanName = (provinceName || '').trim();
-  if (PROVINCE_INTROS[cleanName]) {
-    return PROVINCE_INTROS[cleanName];
+  const dict = isEn ? PROVINCE_INTROS_EN : PROVINCE_INTROS;
+
+  if (dict[cleanName]) {
+    return dict[cleanName];
   }
 
-  for (const [key, text] of Object.entries(PROVINCE_INTROS)) {
-    if (cleanName.toLowerCase().includes(key.toLowerCase()) || key.toLowerCase().includes(cleanName.toLowerCase())) {
+  for (const [key, text] of Object.entries(dict)) {
+    if (
+      cleanName.toLowerCase().includes(key.toLowerCase()) ||
+      key.toLowerCase().includes(cleanName.toLowerCase())
+    ) {
       return text;
     }
+  }
+
+  if (isEn) {
+    const countSentenceEn =
+      typeof heritageCount === 'number' && heritageCount > 0
+        ? `This province currently preserves ${heritageCount} notable cultural, historical, and scenic heritage landmarks on the Hồn Đất Việt map.`
+        : 'This land preserves many historical monuments, traditional festivals, and scenic wonders.';
+    return `Welcome to ${cleanName}, a land rich in historical traditions and cultural identity along Vietnam's S-shaped homeland. ${countSentenceEn} Tap any heritage pin below to explore its thousand-year stories!`.replace(
+      /\s+/g,
+      ' '
+    ).trim();
   }
 
   const countSentence =
@@ -148,9 +267,37 @@ export function getProvinceIntroText(
 
 /**
  * Lấy nội dung thuyết minh 3–5 câu (~30–45 giây) cho một Di sản cụ thể.
- * Ưu tiên: `heritage.intro` -> `HERITAGE_INTROS[heritage.id]` -> tổng hợp từ dữ liệu tĩnh có sẵn.
+ * Tự động trả về Tiếng Anh khi `language === 'en'` và Tiếng Việt khi `language === 'vi'`.
  */
-export function getHeritageIntroText(heritage: HeritageItem): string {
+export function getHeritageIntroText(
+  heritage: HeritageItem,
+  language: string = 'vi'
+): string {
+  const isEn = language === 'en';
+
+  if (isEn) {
+    if (HERITAGE_INTROS_EN[heritage.id]) {
+      return HERITAGE_INTROS_EN[heritage.id];
+    }
+    const enTrans = heritage.translations?.en;
+    const enName = enTrans?.name || heritage.englishName || heritage.name;
+    const enProvince = heritage.province || 'Vietnam';
+    const enPeriod = enTrans?.period || heritage.period || 'ancient times';
+    const enSig = (enTrans?.culturalSignificance || enTrans?.overview || '').trim();
+    const enHist = (enTrans?.history || '').trim();
+    if (enSig || enHist) {
+      const histSentences = enHist
+        .split(/(?<=[.!?])\s+/)
+        .filter(Boolean)
+        .slice(0, 2)
+        .join(' ');
+      return `Welcome to ${enName}, an iconic cultural heritage site in ${enProvince} dating back to ${enPeriod}. ${enSig} ${histSentences}`
+        .replace(/\s+/g, ' ')
+        .trim();
+    }
+    return `Welcome to ${enName}, a celebrated cultural and historical heritage landmark located in ${enProvince}, Vietnam. This destination preserves centuries of architectural artistry, spiritual devotion, and national history. Feel free to explore its detailed historical records, photos, and stories right on your screen!`;
+  }
+
   if (heritage.intro && heritage.intro.trim().length > 20) {
     return heritage.intro.trim();
   }
@@ -178,3 +325,71 @@ export function getHeritageIntroText(heritage: HeritageItem): string {
     ' '
   ).trim();
 }
+
+/**
+ * Tạo lời thuyết minh đề xuất ẩm thực, quán ăn, nhà hàng gần di sản cho Hướng dẫn viên 3D (<GuideCharacter />).
+ * Tự động hỗ trợ song ngữ Tiếng Việt (`vi`) và Tiếng Anh (`en`).
+ */
+export function getFoodRecommendationIntroText(
+  heritage: HeritageItem | undefined,
+  places: PlaceItem[],
+  language: string = 'vi'
+): string {
+  const isEn = language === 'en';
+  const topPlaces = (places || []).slice(0, 3);
+
+  const heritageNameVi = heritage?.name || 'điểm di sản này';
+  const heritageNameEn =
+    heritage?.translations?.en?.name || heritage?.englishName || heritage?.name || 'this heritage site';
+  const province = heritage?.province || 'địa phương';
+
+  if (topPlaces.length === 0) {
+    return isEn
+      ? `Welcome to the culinary space near ${heritageNameEn} in ${province}! Let me help you discover the best local restaurants, specialty dishes, and cozy cafes around this heritage landmark.`
+      : `Chào mừng bạn đến với không gian ẩm thực quanh ${heritageNameVi} tại ${province}! Mình sẽ gợi ý ngay các quán ăn đặc sản, nhà hàng và quán cà phê ngon nhất gần di sản này cho bạn nhé!`;
+  }
+
+  if (isEn) {
+    const first = topPlaces[0];
+    const firstDish = first.specialties?.[0] ? `famous for ${first.specialties[0]}` : 'highly rated by visitors';
+    const firstDist = first.distanceKm !== undefined ? `just ${first.distanceKm} km away` : 'nearby';
+    const others = topPlaces
+      .slice(1)
+      .map((p) => {
+        const dish = p.specialties?.[0] ? ` (${p.specialties[0]})` : '';
+        return `${p.name}${dish}`;
+      })
+      .join(' and ');
+
+    return `Near ${heritageNameEn} in ${province}, I highly recommend ${topPlaces.length} wonderful dining spots for you! First is ${first.name}, ${firstDist} with a ${first.rating}-star rating, ${firstDish}. ${
+      others ? `You can also visit ${others}. ` : ''
+    }Tap any restaurant card on your screen to see customer review highlights or open Google Maps directions!`
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  const first = topPlaces[0];
+  const firstSpec =
+    first.specialties && first.specialties.length > 0
+      ? `nổi tiếng với món ${first.specialties.slice(0, 2).join(', ')}`
+      : 'được thực khách đánh giá rất cao';
+  const firstDist =
+    first.distanceKm !== undefined ? `cách di sản chỉ ${first.distanceKm} km` : 'nằm ngay gần di sản';
+
+  const secondPart =
+    topPlaces.length > 1
+      ? `Bên cạnh đó, bạn đừng bỏ lỡ ${topPlaces
+          .slice(1)
+          .map((p) => {
+            const spec = p.specialties?.[0] ? ` với đặc sản ${p.specialties[0]}` : '';
+            const dist = p.distanceKm !== undefined ? ` (cách ${p.distanceKm} km)` : '';
+            return `${p.name}${spec}${dist}`;
+          })
+          .join(' và ')}.`
+      : '';
+
+  return `Gần ${heritageNameVi} tại ${province}, mình đề xuất cho bạn ${topPlaces.length} địa điểm ăn uống hấp dẫn nhất! Đầu tiên là ${first.name}, ${firstDist}, đạt ${first.rating} sao, ${firstSpec}. ${secondPart} Bạn hãy chạm vào thẻ quán ăn bên dưới để xem phân tích đánh giá hoặc mở chỉ đường Google Maps nhé!`
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+

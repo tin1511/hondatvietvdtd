@@ -85,14 +85,16 @@ import { MobileAppDownloadModal } from './components/MobileAppDownloadModal';
 import { HeritageEditModal } from './components/HeritageEditModal';
 import { PlaceEditModal } from './components/PlaceEditModal';
 import { HeritageItem, UserProfile, CityLandmarkBackground } from './types';
-import { HERITAGE_DATABASE } from './data/vietnamHeritageData';
+import { HERITAGE_DATABASE, getPlacesForHeritage } from './data/vietnamHeritageData';
 import { storageService, applySiteLogoToDom } from './services/storageService';
 import { geolocationService, CITY_LANDMARK_PRESETS } from './services/geolocationService';
 import { getHeritageForLandmark } from './services/landmarkHeritageService';
 import { loadAIConfigFromFirebase, loadTTSConfigFromFirebase } from './services/systemConfigService';
 import { languageService } from './services/languageService';
-import { triggerGuideNarration } from './services/guideVoiceService';
-import { getHeritageIntroText } from './data/guideIntroData';
+import { guideVoiceService, triggerGuideNarration } from './services/guideVoiceService';
+import { getHeritageIntroText, getFoodRecommendationIntroText } from './data/guideIntroData';
+import { MAP_OPEN_ROUTE_EVENT, MapRouteRequestPayload } from './services/routeNavigationService';
+import { DongSonWatermarkSvg } from './components/DynamicHeritageBackground';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<string>('home');
@@ -123,6 +125,7 @@ export default function App() {
   } | undefined>(undefined);
 
   const [selectedFoodHeritageId, setSelectedFoodHeritageId] = useState<string>('dai-noi-hue');
+  const [pendingMapRoute, setPendingMapRoute] = useState<MapRouteRequestPayload | null>(null);
   const [selectedDetailHeritage, setSelectedDetailHeritage] = useState<HeritageItem | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState<boolean>(false);
   const [isOfflineModalOpen, setIsOfflineModalOpen] = useState<boolean>(false);
@@ -188,11 +191,22 @@ export default function App() {
     };
     window.addEventListener('hdv_language_changed', handleLanguageChanged);
 
+    // Listen for in-app map route requests from FoodAndEntertainmentModule or 3D GuideCharacter
+    const handleOpenMapRoute = (e: Event) => {
+      const customEvent = e as CustomEvent<MapRouteRequestPayload>;
+      if (customEvent.detail?.heritageId) {
+        setPendingMapRoute(customEvent.detail);
+        setActiveTab('map');
+      }
+    };
+    window.addEventListener(MAP_OPEN_ROUTE_EVENT, handleOpenMapRoute);
+
     detectGps();
 
     return () => {
       window.removeEventListener('hdv_site_logo_changed', handleLogoChanged);
       window.removeEventListener('hdv_language_changed', handleLanguageChanged);
+      window.removeEventListener(MAP_OPEN_ROUTE_EVENT, handleOpenMapRoute);
     };
   }, []);
 
@@ -352,20 +366,55 @@ export default function App() {
   };
 
   const handleNavigateToFood = (heritageId: string) => {
+    guideVoiceService.unlockAudioOnUserGesture();
     setSelectedFoodHeritageId(heritageId);
     switchTabPreservingHomeScroll('food');
+
+    const currentLang = language === 'en' ? 'en' : 'vi';
+    const heritage = HERITAGE_DATABASE.find((h) => h.id === heritageId);
+    const allPlacesMap = storageService.getPlaces();
+    const places = getPlacesForHeritage(heritageId, allPlacesMap);
+    const introText = getFoodRecommendationIntroText(heritage, places, currentLang);
+
+    triggerGuideNarration({
+      id: `food-recommend-${heritageId}-${Date.now()}`,
+      title:
+        currentLang === 'en'
+          ? `Nearby Cuisine · ${heritage?.englishName || heritage?.name || 'Heritage'}`
+          : `Ẩm thực gần ${heritage?.name || 'Di sản'}`,
+      subtitleBadge:
+        heritage?.province || (currentLang === 'en' ? 'Culinary Guide' : 'Đề xuất Ẩm thực'),
+      introText,
+      targetType: 'food_recommendation',
+      heritageId,
+      provinceName: heritage?.province,
+      lang: currentLang,
+      recommendedPlaces: places.slice(0, 3).map((p) => ({
+        id: p.id,
+        name: p.name,
+        categoryLabel: p.categoryLabel,
+        rating: p.rating,
+        distanceKm: p.distanceKm,
+        priceText: p.priceText,
+        specialties: p.specialties,
+        googleMapsUri: p.googleMapsUri,
+        address: p.address,
+      })),
+    });
   };
 
   const handleSelectHeritage = (heritage: HeritageItem) => {
     setSelectedFoodHeritageId(heritage.id);
     setSelectedDetailHeritage(heritage);
     setIsDetailModalOpen(true);
+    const currentLang = language === 'en' ? 'en' : 'vi';
     triggerGuideNarration({
       id: `heritage-${heritage.id}`,
       title: heritage.name,
       subtitleBadge: heritage.province,
-      introText: getHeritageIntroText(heritage),
+      introText: getHeritageIntroText(heritage, currentLang),
       targetType: 'heritage',
+      lang: currentLang,
     });
   };
 
@@ -387,19 +436,18 @@ export default function App() {
       {isPeekingBackground && activeTab !== 'home' ? (
         <div
           onClick={() => setIsPeekingBackground(false)}
-          className="fixed inset-0 pointer-events-auto z-0 overflow-hidden select-none cursor-pointer"
+          className="fixed inset-0 pointer-events-auto z-0 overflow-hidden select-none cursor-pointer bg-[var(--bg)]"
           title="Chạm để quay lại giao diện"
         >
-          <img
-            key={currentLandmark.id + currentLandmark.imageUrl}
-            src={currentLandmark.imageUrl}
-            alt={currentLandmark.landmarkName}
-            referrerPolicy="no-referrer"
-            onError={(e) => {
-              (e.target as HTMLImageElement).src =
-                'https://images.unsplash.com/photo-1559592413-7cec4d0cae2b?auto=format&fit=crop&w=2000&q=85';
-            }}
-            className="w-full h-full object-cover object-center scale-105 transition-all duration-700 ease-out"
+          <video
+            key={currentLandmark.id + (currentLandmark.videoUrl || '/assets/aistudio/hue_imperial_hd_clean.mp4')}
+            src={currentLandmark.videoUrl || '/assets/aistudio/hue_imperial_hd_clean.mp4'}
+            poster={currentLandmark.imageUrl || '/assets/aistudio/hue_imperial_poster_hd.jpg'}
+            autoPlay
+            loop
+            muted
+            playsInline
+            className="hdv-crisp-media w-full h-full object-cover object-center scale-100"
           />
         </div>
       ) : (
@@ -415,10 +463,13 @@ export default function App() {
               alt={currentLandmark.landmarkName}
               referrerPolicy="no-referrer"
               onError={(e) => {
-                (e.target as HTMLImageElement).src =
-                  'https://images.unsplash.com/photo-1559592413-7cec4d0cae2b?auto=format&fit=crop&w=2000&q=85';
+                (e.target as HTMLImageElement).src = '/assets/aistudio/hue_imperial_poster_hd.jpg';
               }}
-              className="w-full h-full object-cover object-center opacity-20 saturate-90"
+              className="hdv-crisp-media w-full h-full object-cover object-center opacity-22 saturate-95 animate-hdv-kenburns"
+            />
+            <DongSonWatermarkSvg
+              className="absolute -top-16 -right-16 w-72 h-72 sm:w-96 sm:h-96"
+              opacityClass="opacity-[0.14]"
             />
             <div
               className="absolute inset-0"
@@ -431,9 +482,9 @@ export default function App() {
         )
       )}
 
-      {/* Main UI Body Wrapper with Peeking Toggle */}
-      <div className={`relative z-10 flex-1 flex flex-col justify-between transition-all duration-300 ${
-        isPeekingBackground && activeTab !== 'home' ? 'opacity-0 pointer-events-none scale-98 invisible' : 'opacity-100 pointer-events-auto scale-100'
+      {/* Main UI Body Wrapper with Peeking Toggle (No CSS transform/scale here so position:fixed children stay viewport-locked) */}
+      <div className={`relative z-10 flex-1 flex flex-col justify-between transition-opacity duration-300 ${
+        isPeekingBackground && activeTab !== 'home' ? 'opacity-0 pointer-events-none invisible' : 'opacity-100 pointer-events-auto'
       }`}>
 
         {/* Navigation Bar (Ẩn mượt mà khi đang bật chế độ Ngắm toàn cảnh 100%) */}
@@ -459,7 +510,7 @@ export default function App() {
       </div>
 
       {/* Main Content Body */}
-      <main className={`flex-1 relative z-10 ${activeTab === 'home' ? 'pb-0' : activeTab === 'map' ? 'pb-16' : 'pb-24'}`}>
+      <main className={`flex-1 relative z-10 ${activeTab === 'home' ? 'pb-0' : activeTab === 'map' ? 'pb-16 md:pb-0' : 'pb-20 md:pb-24'}`}>
         {/* VIEW 1: HOME FEED LANDING (Luôn giữ trong DOM để bảo toàn vị trí cuộn 100% không giật) */}
         <div className={activeTab === 'home' ? 'block' : 'hidden'}>
           <HomeFeedView
@@ -482,19 +533,23 @@ export default function App() {
             onTogglePeekBackground={(nextVal?: boolean) =>
               setIsPeekingBackground((prev) => (typeof nextVal === 'boolean' ? nextVal : !prev))
             }
+            isActiveTab={activeTab === 'home'}
           />
         </div>
 
         {/* Thanh Quay lại Home giữ nguyên vị trí cuộn cũ khi đang ở các tab tính năng */}
         {activeTab !== 'home' && activeTab !== 'map' && (
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-3 pb-1 flex flex-wrap items-center justify-between gap-2">
+          <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 pt-2 sm:pt-3 pb-0.5 sm:pb-1 flex flex-wrap items-center justify-between gap-2">
             <button
               type="button"
               onClick={() => handleNavigate('home')}
-              className="min-h-[44px] px-4 py-2 rounded-xl bg-[var(--surface)] hover:bg-[#F3E5CD] border border-[var(--gold)] text-[var(--text)] text-xs sm:text-sm font-bold inline-flex items-center gap-2 shadow-[0_4px_14px_rgba(59,42,32,0.1)] transition-colors cursor-pointer"
+              className="min-h-[40px] sm:min-h-[44px] px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl bg-[var(--surface)] hover:bg-[#F3E5CD] border border-[var(--gold)] text-[var(--text)] text-xs sm:text-sm font-bold inline-flex items-center gap-1.5 sm:gap-2 shadow-[0_3px_10px_rgba(59,42,32,0.08)] transition-colors cursor-pointer"
             >
-              <ArrowLeft className="w-4 h-4 text-[var(--primary)]" />
-              <span>
+              <ArrowLeft className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[var(--primary)]" />
+              <span className="sm:hidden">
+                {language === 'en' ? 'Back to Home' : 'Về Trang chủ'}
+              </span>
+              <span className="hidden sm:inline">
                 {language === 'en'
                   ? 'Back to Home (keep scroll position)'
                   : 'Quay lại Home (giữ vị trí đang lướt)'}
@@ -568,6 +623,8 @@ export default function App() {
                     onNavigateToStory={handleNavigateToStory}
                     onNavigateToFood={handleNavigateToFood}
                     onSelectHeritage={handleSelectHeritage}
+                    initialRouteRequest={pendingMapRoute}
+                    onClearRouteRequest={() => setPendingMapRoute(null)}
                   />
                 )}
 
@@ -728,9 +785,9 @@ export default function App() {
       </footer>
       </div>
 
-      {/* 📱 Floating Controls (Desktop & Tablet only to avoid blocking content on mobile phones) */}
+      {/* 📱 Floating Controls (Placed at bottom-left on desktop/tablet so they never overlap the 3D Guide Character at bottom-right) */}
       {!isPeekingBackground ? (
-        <div className="hidden md:block fixed bottom-safe right-6 z-30 pointer-events-none">
+        <div className="hidden md:block fixed bottom-4 left-4 sm:left-6 z-40 pointer-events-none">
           <div className="flex items-center gap-2 pointer-events-auto">
             {/* Nút Khám phá Di sản / Danh thắng hình nền đang hiển thị */}
             <button
@@ -747,8 +804,9 @@ export default function App() {
             {/* Peek Background & Landmark Selector */}
             <button
               type="button"
+              id="btn-floating-peek-background"
               onClick={() => setIsPeekingBackground(true)}
-              className="group flex items-center gap-1.5 px-3 py-2 rounded-full bg-[var(--surface)]/95 hover:bg-[#F3E5CD] text-[var(--text)] border border-[var(--gold)] shadow-[0_6px_18px_rgba(59,42,32,0.14)] backdrop-blur-md text-xs font-bold transition-all active:scale-95 cursor-pointer shrink-0"
+              className="group flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-[var(--surface)]/95 hover:bg-[#F3E5CD] text-[var(--text)] border border-[var(--gold)] shadow-[0_6px_18px_rgba(59,42,32,0.14)] backdrop-blur-md text-xs font-bold transition-all active:scale-95 cursor-pointer shrink-0"
               title={languageService.t('floating.peekBackground', language, 'Ẩn giao diện để chiêm ngưỡng trọn vẹn bức ảnh nền danh thắng')}
             >
               <Eye className="w-4 h-4 text-[var(--jade)] group-hover:scale-110 transition-transform" />
@@ -771,9 +829,9 @@ export default function App() {
           </div>
         </div>
       ) : (
-        <div 
+        <div
           onClick={() => setIsPeekingBackground(false)}
-          className="fixed top-4 left-4 right-4 z-50 flex items-center justify-between px-4 py-3 rounded-2xl bg-[var(--surface)]/95 border border-[var(--gold)] backdrop-blur-lg shadow-[0_12px_32px_rgba(59,42,32,0.22)] text-xs cursor-pointer animate-in fade-in slide-in-from-top-4 duration-300"
+          className="fixed top-4 left-4 right-4 z-50 flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 px-4 py-3 rounded-2xl bg-[var(--surface)]/95 border border-[var(--gold)] backdrop-blur-lg shadow-[0_12px_32px_rgba(59,42,32,0.22)] text-xs cursor-pointer animate-in fade-in slide-in-from-top-4 duration-300"
         >
           <div className="flex items-center gap-2.5 min-w-0">
             <span className="relative flex h-2.5 w-2.5 shrink-0">
@@ -794,10 +852,24 @@ export default function App() {
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
+                setShowCityPicker(true);
+              }}
+              className="px-3 py-1.5 rounded-xl bg-[var(--bg)] hover:bg-[#F3E5CD] text-[var(--jade)] border border-[var(--gold)] font-bold text-xs shrink-0 shadow-sm transition-colors flex items-center gap-1.5 cursor-pointer"
+              title={language === 'en' ? 'Change scenic background photo' : 'Đổi ảnh nền danh thắng khác'}
+            >
+              <MapPin className="w-3.5 h-3.5 text-[var(--jade)]" />
+              <span className="hidden sm:inline">
+                {language === 'en' ? 'Change Scenery' : 'Đổi cảnh nền'}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
                 setIsPeekingBackground(false);
                 handleExploreCurrentLandmark();
               }}
-              className="px-3.5 py-1.5 rounded-xl bg-[var(--primary)] hover:bg-[var(--primary-hover)] text-[#FFFDF8] font-extrabold text-xs shrink-0 shadow-md transition-all active:scale-95 flex items-center gap-1.5"
+              className="px-3.5 py-1.5 rounded-xl bg-[var(--primary)] hover:bg-[var(--primary-hover)] text-[#FFFDF8] font-extrabold text-xs shrink-0 shadow-md transition-all active:scale-95 flex items-center gap-1.5 cursor-pointer"
             >
               <Sparkles className="w-3.5 h-3.5" />
               <span>{languageService.t('floating.exploreLandmark', language, 'Khám phá di sản')}</span>
@@ -808,7 +880,7 @@ export default function App() {
                 e.stopPropagation();
                 setIsPeekingBackground(false);
               }}
-              className="px-3.5 py-1.5 rounded-xl bg-[var(--bg)] hover:bg-[#F3E5CD] text-[var(--text)] border border-[var(--gold)] font-bold text-xs shrink-0 shadow-sm transition-colors flex items-center gap-1.5"
+              className="px-3.5 py-1.5 rounded-xl bg-[var(--bg)] hover:bg-[#F3E5CD] text-[var(--text)] border border-[var(--gold)] font-bold text-xs shrink-0 shadow-sm transition-colors flex items-center gap-1.5 cursor-pointer"
             >
               <EyeOff className="w-3.5 h-3.5 text-[var(--primary)]" />
               <span>{languageService.t('floating.showUI', language, 'Hiện giao diện')}</span>

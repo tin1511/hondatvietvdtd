@@ -194,17 +194,15 @@ export const AdminAIDashboard: React.FC = () => {
 
   // Reset all settings
   const handleResetAll = () => {
-    if (window.confirm('Khôi phục toàn bộ cấu hình AI, TTS & EmailJS về mặc định ban đầu?')) {
-      const defAi = resetAIConfig();
-      const defTts = resetTTSConfig();
-      const defEmailJs = resetEmailJSConfig();
-      setAiConfig(defAi);
-      setTtsConfig(defTts);
-      setEmailJsConfig(defEmailJs);
-      setAiTestResult(null);
-      setTtsTestResult(null);
-      setEmailJsTestResult(null);
-    }
+    const defAi = resetAIConfig();
+    const defTts = resetTTSConfig();
+    const defEmailJs = resetEmailJSConfig();
+    setAiConfig(defAi);
+    setTtsConfig(defTts);
+    setEmailJsConfig(defEmailJs);
+    setAiTestResult(null);
+    setTtsTestResult(null);
+    setEmailJsTestResult(null);
   };
 
   // Run Test AI API

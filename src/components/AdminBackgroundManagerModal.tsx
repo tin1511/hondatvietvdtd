@@ -15,7 +15,9 @@ import {
   Edit3,
   Plus,
   Loader2,
-  Eye
+  Eye,
+  Video,
+  Film
 } from 'lucide-react';
 import { HomeBackgroundConfig, HomeSectionBackgroundOverride, CityLandmarkBackground } from '../types';
 import { storageService, DEFAULT_HOME_BACKGROUNDS } from '../services/storageService';
@@ -23,6 +25,7 @@ import { saveHomeBackgroundsToFirebase } from '../services/systemConfigService';
 import { AILandmarkImagePickerModal } from './AILandmarkImagePickerModal';
 import { LandmarkEditModal } from './LandmarkEditModal';
 import { handleImageError } from '../utils/imageUtils';
+import { extractYouTubeId } from './DynamicHeritageBackground';
 
 interface AdminBackgroundManagerModalProps {
   isOpen: boolean;
@@ -179,11 +182,13 @@ export const AdminBackgroundManagerModal: React.FC<AdminBackgroundManagerModalPr
 
   // Form state for currently selected section
   const [editImageUrl, setEditImageUrl] = useState<string>('');
+  const [editVideoUrl, setEditVideoUrl] = useState<string>('');
   const [editSubtitle, setEditSubtitle] = useState<string>('');
   const [editOpacity, setEditOpacity] = useState<number>(0.42);
   const [useCustomHero, setUseCustomHero] = useState<boolean>(false);
 
   const [isUploading, setIsUploading] = useState<boolean>(false);
+  const [isUploadingVideo, setIsUploadingVideo] = useState<boolean>(false);
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [feedbackMsg, setFeedbackMsg] = useState<string | null>(null);
   const [isAIPickerOpen, setIsAIPickerOpen] = useState<boolean>(false);
@@ -194,6 +199,7 @@ export const AdminBackgroundManagerModal: React.FC<AdminBackgroundManagerModalPr
   const [isLandmarkEditOpen, setIsLandmarkEditOpen] = useState<boolean>(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const videoFileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -204,6 +210,7 @@ export const AdminBackgroundManagerModal: React.FC<AdminBackgroundManagerModalPr
       const sec = freshConfig.sections[targetId] || DEFAULT_HOME_BACKGROUNDS.sections[targetId];
       if (sec) {
         setEditImageUrl(sec.imageUrl || '');
+        setEditVideoUrl(sec.videoUrl || '');
         setEditSubtitle(sec.subtitle || '');
         setEditOpacity(sec.overlayOpacity ?? 0.42);
       }
@@ -218,6 +225,7 @@ export const AdminBackgroundManagerModal: React.FC<AdminBackgroundManagerModalPr
     const sec = config.sections[secId] || DEFAULT_HOME_BACKGROUNDS.sections[secId];
     if (sec) {
       setEditImageUrl(sec.imageUrl || '');
+      setEditVideoUrl(sec.videoUrl || '');
       setEditSubtitle(sec.subtitle || '');
       setEditOpacity(sec.overlayOpacity ?? 0.42);
     }
@@ -258,9 +266,39 @@ export const AdminBackgroundManagerModal: React.FC<AdminBackgroundManagerModalPr
     }
   };
 
+  const handleVideoFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 25 * 1024 * 1024) {
+      setFeedbackMsg('⚠️ Video tải trực tiếp tối đa 25MB. Với video nặng hơn, bạn hãy dán link .mp4 hoặc link YouTube ở ô bên dưới nhé!');
+      return;
+    }
+    setIsUploadingVideo(true);
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.onerror = () => reject(new Error('Không thể đọc tệp video.'));
+        reader.readAsDataURL(file);
+      });
+      setEditVideoUrl(dataUrl);
+      if (selectedSectionId === 'hero') {
+        setUseCustomHero(true);
+      }
+      setFeedbackMsg('🎬 Đã nạp tệp Video thành công! Bấm "Lưu & Áp Dụng Ngay" để phát trên trang chủ.');
+    } catch (err: any) {
+      setFeedbackMsg(err?.message || 'Không thể xử lý tệp video.');
+    } finally {
+      setIsUploadingVideo(false);
+      if (videoFileInputRef.current) {
+        videoFileInputRef.current.value = '';
+      }
+    }
+  };
+
   const handleSaveCurrentSection = async () => {
-    if (!editImageUrl.trim()) {
-      setFeedbackMsg('⚠️ Vui lòng nhập URL ảnh hoặc tải ảnh từ máy lên.');
+    if (!editImageUrl.trim() && !editVideoUrl.trim()) {
+      setFeedbackMsg('⚠️ Vui lòng nhập URL ảnh/video hoặc tải tệp từ máy lên.');
       return;
     }
     setIsSaving(true);
@@ -268,25 +306,39 @@ export const AdminBackgroundManagerModal: React.FC<AdminBackgroundManagerModalPr
       const updatedSection: HomeSectionBackgroundOverride = {
         ...currentSectionMeta,
         sectionId: selectedSectionId,
-        imageUrl: editImageUrl.trim(),
+        imageUrl: editImageUrl.trim() || currentSectionMeta.imageUrl,
+        videoUrl: editVideoUrl.trim() || undefined,
+        mediaType: editVideoUrl.trim() ? 'video' : 'image',
         subtitle: editSubtitle.trim(),
         overlayOpacity: editOpacity,
         updatedAt: new Date().toISOString()
       };
 
+      const nextSections: Record<string, HomeSectionBackgroundOverride> = {
+        ...config.sections,
+        [selectedSectionId]: updatedSection,
+        ...(editVideoUrl.trim() && config.sections['hero']
+          ? {
+              hero: {
+                ...config.sections['hero'],
+                videoUrl: editVideoUrl.trim(),
+                mediaType: 'video',
+                imageUrl: editImageUrl.trim() || config.sections['hero'].imageUrl,
+                updatedAt: new Date().toISOString()
+              }
+            }
+          : {})
+      };
+
       const nextConfig: HomeBackgroundConfig = {
         ...config,
-        sections: {
-          ...config.sections,
-          [selectedSectionId]: updatedSection
-        },
-        useCustomHeroBackground: selectedSectionId === 'hero' ? true : useCustomHero,
+        sections: nextSections,
+        useCustomHeroBackground: selectedSectionId === 'hero' || Boolean(editVideoUrl.trim()) ? true : useCustomHero,
         updatedAt: new Date().toISOString(),
         updatedBy: storageService.getCurrentUser()?.displayName || 'Admin'
       };
 
-      // Also if Admin edits the Hero background and wants it reflected immediately even if GPS landmark is Da Nang
-      if (selectedSectionId === 'hero') {
+      if (selectedSectionId === 'hero' || editVideoUrl.trim()) {
         setUseCustomHero(true);
       }
 
@@ -298,7 +350,11 @@ export const AdminBackgroundManagerModal: React.FC<AdminBackgroundManagerModalPr
         onConfigUpdated(saved);
       }
 
-      setFeedbackMsg(`✅ Đã lưu và áp dụng ảnh nền cho "${currentSectionMeta.label}"!`);
+      setFeedbackMsg(
+        editVideoUrl.trim()
+          ? `🎬 Đã gắn và phát Video nền cho "${currentSectionMeta.label}"!`
+          : `✅ Đã lưu và áp dụng ảnh nền cho "${currentSectionMeta.label}"!`
+      );
       setTimeout(() => setFeedbackMsg(null), 4000);
     } finally {
       setIsSaving(false);
@@ -311,35 +367,34 @@ export const AdminBackgroundManagerModal: React.FC<AdminBackgroundManagerModalPr
     const nextConfig = storageService.resetHomeSectionBackground(selectedSectionId);
     setConfig(nextConfig);
     setEditImageUrl(defSec.imageUrl);
+    setEditVideoUrl(defSec.videoUrl || '');
     setEditSubtitle(defSec.subtitle || '');
-    setEditOpacity(defSec.overlayOpacity ?? 0.42);
+    setEditOpacity(defSec.overlayOpacity ?? 0.36);
     if (selectedSectionId === 'hero') {
-      setUseCustomHero(false);
+      setUseCustomHero(true);
     }
     await saveHomeBackgroundsToFirebase(nextConfig, storageService.getCurrentUser()?.email);
     if (onConfigUpdated) {
       onConfigUpdated(nextConfig);
     }
-    setFeedbackMsg(`🔄 Đã khôi phục ảnh nền mặc định cho "${defSec.label}".`);
+    setFeedbackMsg(`🔄 Đã khôi phục nền mặc định cho "${defSec.label}".`);
     setTimeout(() => setFeedbackMsg(null), 3500);
   };
 
   const handleResetAllSections = async () => {
-    if (!window.confirm('Khôi phục toàn bộ ảnh nền Trang Chủ (Hero + 7 tính năng + Nền chung) về mặc định ban đầu?')) {
-      return;
-    }
     const resetCfg = storageService.resetHomeSectionBackground();
     setConfig(resetCfg);
     const defSec = resetCfg.sections[selectedSectionId] || DEFAULT_HOME_BACKGROUNDS.sections.hero;
     setEditImageUrl(defSec.imageUrl);
+    setEditVideoUrl(defSec.videoUrl || '');
     setEditSubtitle(defSec.subtitle || '');
-    setEditOpacity(defSec.overlayOpacity ?? 0.42);
-    setUseCustomHero(false);
+    setEditOpacity(defSec.overlayOpacity ?? 0.36);
+    setUseCustomHero(true);
     await saveHomeBackgroundsToFirebase(resetCfg, storageService.getCurrentUser()?.email);
     if (onConfigUpdated) {
       onConfigUpdated(resetCfg);
     }
-    setFeedbackMsg('🔄 Đã khôi phục toàn bộ ảnh nền về mặc định!');
+    setFeedbackMsg('🔄 Đã khôi phục toàn bộ ảnh & video nền về mặc định!');
     setTimeout(() => setFeedbackMsg(null), 3500);
   };
 
@@ -513,13 +568,35 @@ export const AdminBackgroundManagerModal: React.FC<AdminBackgroundManagerModalPr
                 </div>
 
                 <div className="relative h-48 sm:h-56 rounded-2xl overflow-hidden border-2 border-[#C8963E]/60 shadow-inner bg-[#E6D5B8]">
-                  <img
-                    src={editImageUrl || currentSectionMeta.imageUrl}
-                    alt={currentSectionMeta.label}
-                    referrerPolicy="no-referrer"
-                    onError={(e) => handleImageError(e)}
-                    className="w-full h-full object-cover transition-all duration-500"
-                  />
+                  {editVideoUrl.trim() ? (
+                    extractYouTubeId(editVideoUrl) ? (
+                      <iframe
+                        title="YouTube Preview"
+                        src={`https://www.youtube.com/embed/${extractYouTubeId(editVideoUrl)}?autoplay=1&mute=1&loop=1&playlist=${extractYouTubeId(editVideoUrl)}&controls=0&playsinline=1`}
+                        allow="autoplay; encrypted-media"
+                        className="w-full h-full object-cover pointer-events-none"
+                      />
+                    ) : (
+                      <video
+                        key={editVideoUrl}
+                        src={editVideoUrl}
+                        poster={editImageUrl || currentSectionMeta.imageUrl}
+                        autoPlay
+                        loop
+                        muted
+                        playsInline
+                        className="w-full h-full object-cover"
+                      />
+                    )
+                  ) : (
+                    <img
+                      src={editImageUrl || currentSectionMeta.imageUrl}
+                      alt={currentSectionMeta.label}
+                      referrerPolicy="no-referrer"
+                      onError={(e) => handleImageError(e)}
+                      className="w-full h-full object-cover transition-all duration-500"
+                    />
+                  )}
                   {/* Warm Heritage Overlay matching HomeFeedView */}
                   <div
                     className="absolute inset-0 transition-opacity duration-300"
@@ -532,7 +609,7 @@ export const AdminBackgroundManagerModal: React.FC<AdminBackgroundManagerModalPr
                   <div className="absolute inset-0 p-4 flex flex-col items-center justify-center text-center">
                     <div className="bg-[#FFFDF8]/92 backdrop-blur-md border border-[#C8963E] rounded-2xl px-5 py-3.5 max-w-md shadow-lg">
                       <span className="text-[10px] font-bold uppercase tracking-widest text-[#B3261E] block">
-                        HỒN ĐẤT VIỆT · XEM TRƯỚC NỀN
+                        {editVideoUrl.trim() ? '🎬 ĐANG PHÁT VIDEO NỀN' : 'HỒN ĐẤT VIỆT · XEM TRƯỚC NỀN'}
                       </span>
                       <p className="font-serif font-bold text-sm sm:text-base text-[#3B2A20] mt-0.5">
                         {currentSectionMeta.label}
@@ -648,12 +725,96 @@ export const AdminBackgroundManagerModal: React.FC<AdminBackgroundManagerModalPr
                 </div>
               </div>
 
+              {/* VIDEO BACKGROUND UPLOAD & URL SECTION */}
+              <div className="p-4 rounded-2xl bg-[#2E8B8B]/10 border-2 border-[#2E8B8B]/45 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <span className="text-xs font-extrabold text-[#1D5E5E] flex items-center gap-1.5">
+                      <Video className="w-4 h-4 text-[#2E8B8B]" />
+                      <span>Gắn Video Làm Nền Toàn Màn Hình (.MP4 / .WebM / YouTube)</span>
+                    </span>
+                    <p className="text-[11px] text-[#7A6556] mt-0.5">
+                      Bạn có thể tải file video từ máy lên hoặc dán link video (.mp4, YouTube, Cloudinary, Pexels...).
+                    </p>
+                  </div>
+
+                  <input
+                    ref={videoFileInputRef}
+                    type="file"
+                    accept="video/mp4,video/webm,video/quicktime"
+                    onChange={handleVideoFileUpload}
+                    className="hidden"
+                  />
+
+                  <button
+                    type="button"
+                    disabled={isUploadingVideo}
+                    onClick={() => videoFileInputRef.current?.click()}
+                    className="px-3.5 py-2 rounded-xl bg-[#2E8B8B] hover:bg-[#236B6B] text-[#FFFDF8] font-bold text-xs inline-flex items-center gap-1.5 shadow transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    {isUploadingVideo ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Đang nạp video...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Film className="w-3.5 h-3.5" />
+                        <span>Tải File Video (.MP4) Lên</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={editVideoUrl}
+                    onChange={(e) => setEditVideoUrl(e.target.value)}
+                    placeholder="Dán link video .mp4, .webm hoặc link YouTube (https://www.youtube.com/watch?v=...)"
+                    className="flex-1 px-3.5 py-2 rounded-xl bg-[#FFFDF8] border border-[#2E8B8B]/50 text-[#3B2A20] text-xs font-mono focus:outline-none focus:border-[#2E8B8B]"
+                  />
+                  {editVideoUrl && (
+                    <button
+                      type="button"
+                      onClick={() => setEditVideoUrl('')}
+                      className="px-3 py-2 rounded-xl bg-[#FFFDF8] hover:bg-[#B3261E]/10 text-[#B3261E] border border-[#B3261E]/35 text-xs font-bold cursor-pointer"
+                      title="Gỡ video để dùng ảnh tĩnh"
+                    >
+                      Gỡ Video
+                    </button>
+                  )}
+                </div>
+
+                {/* Nút chọn nhanh Video Đại Nội Huế HD đã xóa logo TikTok & nâng cấp độ nét */}
+                <div className="pt-1 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditVideoUrl('/assets/aistudio/hue_imperial_hd_clean.mp4');
+                      setEditImageUrl('/assets/aistudio/hue_imperial_poster_hd.jpg');
+                      setEditSubtitle('Toàn cảnh Đại Nội Cung Đình Huế · Ngọ Môn · Di sản Văn hóa Thế giới UNESCO');
+                      setEditOpacity(0.34);
+                      setFeedbackMsg('🎬 Đã chọn Video Đại Nội Huế HD (Đã xóa sạch chữ TikTok & nâng cấp độ nét)! Bấm "Lưu & Áp Dụng Ngay" để áp dụng.');
+                    }}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 border transition-all cursor-pointer ${
+                      editVideoUrl === '/assets/aistudio/hue_imperial_hd_clean.mp4'
+                        ? 'bg-[#B3261E] text-[#FFFDF8] border-[#C8963E] shadow-sm'
+                        : 'bg-[#FFFDF8] hover:bg-[#FBF3E4] text-[#3B2A20] border-[#2E8B8B]/50'
+                    }`}
+                  >
+                    <Film className="w-3.5 h-3.5 shrink-0" />
+                    <span>🎬 Dùng Video Đại Nội Huế HD (Đã xóa chữ TikTok · Sắc nét 1440p)</span>
+                  </button>
+                </div>
+              </div>
+
               {/* Method 3: Direct Image URL Input + Subtitle + Opacity */}
               <div className="p-4 rounded-2xl bg-[#FBF3E4]/50 border border-[#C8963E]/40 space-y-3">
                 <div>
                   <label className="block text-xs font-bold text-[#3B2A20] mb-1 flex items-center gap-1.5">
                     <ExternalLink className="w-3.5 h-3.5 text-[#B3261E]" />
-                    <span>Cách 3: Dán đường dẫn URL hình ảnh trực tiếp</span>
+                    <span>Cách 3: Dán đường dẫn URL hình ảnh trực tiếp (hoặc ảnh Poster cho Video)</span>
                   </label>
                   <div className="flex items-center gap-2">
                     <input
@@ -813,11 +974,9 @@ export const AdminBackgroundManagerModal: React.FC<AdminBackgroundManagerModalPr
                 <button
                   type="button"
                   onClick={() => {
-                    if (window.confirm('Khôi phục toàn bộ ảnh nền danh thắng tỉnh thành về mặc định?')) {
-                      const reset = storageService.resetLandmarkBackgrounds();
-                      setLandmarks(reset);
-                      setFeedbackMsg('🔄 Đã khôi phục danh sách ảnh nền tỉnh thành về mặc định.');
-                    }
+                    const reset = storageService.resetLandmarkBackgrounds();
+                    setLandmarks(reset);
+                    setFeedbackMsg('🔄 Đã khôi phục danh sách ảnh nền tỉnh thành về mặc định.');
                   }}
                   className="px-3 py-2 rounded-xl bg-[#FFFDF8] hover:bg-[#E6D5B8]/40 text-[#3B2A20] border border-[#C8963E]/50 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
                 >

@@ -162,6 +162,34 @@ export interface MatchReasoningResult {
   highlightsForUser: string[];
 }
 
+export type ItineraryIncidentType =
+  | 'child_sick'
+  | 'place_closed'
+  | 'bad_weather'
+  | 'time_shift'
+  | 'custom';
+
+export interface NearbyAlternativeOption {
+  name: string;
+  locationName: string;
+  distance: string;
+  activityType: 'heritage' | 'museum' | 'food' | 'craft' | 'cafe' | 'entertainment' | 'leisure';
+  description: string;
+  reason: string;
+  tip?: string;
+}
+
+export interface ItineraryAdaptationRecord {
+  id: string;
+  timestamp: string;
+  incidentType: ItineraryIncidentType;
+  incidentLabel: string;
+  targetSlotIndex?: number;
+  userNote?: string;
+  aiSummary: string;
+  changesMade: string[];
+}
+
 export interface ItineraryTimeSlot {
   time: string;
   activityType: 'heritage' | 'museum' | 'food' | 'craft' | 'cafe' | 'entertainment' | 'leisure';
@@ -174,6 +202,13 @@ export interface ItineraryTimeSlot {
   googleMapsUri?: string;
   tip?: string;
   weatherHint?: string;
+  openingHoursNote?: string;
+  isAdapted?: boolean;
+  adaptationReason?: string;
+  previousLocationName?: string;
+  previousTitle?: string;
+  previousTime?: string;
+  nearbyAlternativeSuggestions?: NearbyAlternativeOption[];
 }
 
 export interface DailyWeatherForecast {
@@ -232,6 +267,12 @@ export interface ItineraryPlan {
   tripStartDate?: string;
   weatherContext?: CityWeatherData;
   isDemoData?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+  companion?: string;
+  budget?: string;
+  interests?: string[];
+  adaptationHistory?: ItineraryAdaptationRecord[];
 }
 
 export interface FamilyStoryMemory {
@@ -424,6 +465,7 @@ export interface CityLandmarkBackground {
   landmarkName: string;
   tagline: string;
   imageUrl: string;
+  videoUrl?: string;
   lat: number;
   lng: number;
   distanceKm?: number;
@@ -514,11 +556,15 @@ export interface RecognitionSectionConfig {
   }>;
 }
 
+export type HeritageAmbienceMode = 'auto' | 'dawn' | 'sunset' | 'lantern';
+
 export interface HomeSectionBackgroundOverride {
   sectionId: string;
   label: string;
   subtitle?: string;
   imageUrl: string;
+  videoUrl?: string;
+  mediaType?: 'image' | 'video';
   overlayOpacity?: number;
   updatedAt?: string;
 }
@@ -526,6 +572,8 @@ export interface HomeSectionBackgroundOverride {
 export interface HomeBackgroundConfig {
   sections: Record<string, HomeSectionBackgroundOverride>;
   useCustomHeroBackground?: boolean;
+  ambienceMode?: HeritageAmbienceMode;
+  enableDynamicEffects?: boolean;
   updatedAt: string;
   updatedBy?: string;
 }

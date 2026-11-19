@@ -80,7 +80,7 @@ export interface GuideVoiceCallbacks {
 }
 
 export interface IGuideVoiceProvider {
-  speak(text: string, callbacks?: GuideVoiceCallbacks): void;
+  speak(text: string, callbacks?: GuideVoiceCallbacks, lang?: 'vi' | 'en'): void;
   pause(): void;
   resume(): void;
   stop(): void;
@@ -88,12 +88,26 @@ export interface IGuideVoiceProvider {
   setMuted(muted: boolean): void;
   getRate(): GuideSpeechRate;
   isMuted(): boolean;
+  setLanguage(lang: 'vi' | 'en'): void;
+  getLanguage(): 'vi' | 'en';
   setMaleVoice(voice: VieNeuMaleVoiceId): void;
   getMaleVoice(): VieNeuMaleVoiceId;
   getAvailableMaleVoices(): VieNeuMaleVoiceOption[];
   isSupported(): boolean;
   hasVietnameseVoice(): boolean;
   unlockAudioOnUserGesture(): void;
+}
+
+export interface GuideRecommendedPlaceSummary {
+  id: string;
+  name: string;
+  categoryLabel: string;
+  rating: number;
+  distanceKm?: number;
+  priceText?: string;
+  specialties?: string[];
+  googleMapsUri?: string;
+  address?: string;
 }
 
 export interface GuideNarrationPayload {
@@ -103,9 +117,17 @@ export interface GuideNarrationPayload {
   introText: string;
   tip?: string;
   guideId?: string;
-  targetType: 'province' | 'heritage' | 'sovereignty' | 'greeting' | 'ui_guide';
+  targetType:
+    | 'province'
+    | 'heritage'
+    | 'sovereignty'
+    | 'greeting'
+    | 'ui_guide'
+    | 'food_recommendation';
   provinceName?: string;
   heritageId?: string;
+  lang?: 'vi' | 'en';
+  recommendedPlaces?: GuideRecommendedPlaceSummary[];
   /** Tọa độ màn hình nơi người dùng vừa bấm để nhân vật quay đầu nhìn về hướng đó */
   screenX?: number;
   screenY?: number;
@@ -234,6 +256,7 @@ const SILENT_WAV_DATA_URI =
 export class VieNeuGuideVoiceProvider implements IGuideVoiceProvider {
   private rate: GuideSpeechRate = 1;
   private muted: boolean = false;
+  private language: 'vi' | 'en' = 'vi';
   private maleVoice: VieNeuMaleVoiceId = 'Hải Đăng';
   private currentText: string = '';
   private currentCallbacks?: GuideVoiceCallbacks;
@@ -256,6 +279,10 @@ export class VieNeuGuideVoiceProvider implements IGuideVoiceProvider {
   constructor() {
     if (typeof window !== 'undefined') {
       try {
+        const savedLang = window.localStorage.getItem('heritage_app_language');
+        if (savedLang === 'en' || savedLang === 'vi') {
+          this.language = savedLang;
+        }
         const savedVoice = window.localStorage.getItem(
           VIENEU_VOICE_STORAGE_KEY
         ) as VieNeuMaleVoiceId | null;
@@ -336,8 +363,48 @@ export class VieNeuGuideVoiceProvider implements IGuideVoiceProvider {
     return this.maleVoice;
   }
 
+  public setLanguage(lang: 'vi' | 'en'): void {
+    this.language = lang === 'en' ? 'en' : 'vi';
+  }
+
+  public getLanguage(): 'vi' | 'en' {
+    return this.language;
+  }
+
   public getAvailableMaleVoices(): VieNeuMaleVoiceOption[] {
     return VIENEU_MALE_VOICES;
+  }
+
+  private pickBestEnglishMaleWebSpeechVoice(): SpeechSynthesisVoice | null {
+    this.loadVoices();
+    if (!this.cachedVoices.length) return null;
+
+    const enVoices = this.cachedVoices.filter((v) => {
+      const lang = (v.lang || '').toLowerCase();
+      return lang.startsWith('en');
+    });
+
+    if (enVoices.length === 0) return null;
+
+    const malePreferred = enVoices.find((v) => {
+      const name = (v.name || '').toLowerCase();
+      return (
+        name.includes('guy') ||
+        name.includes('christopher') ||
+        name.includes('andrew') ||
+        name.includes('daniel') ||
+        name.includes('david') ||
+        name.includes('alex') ||
+        name.includes('google us english') ||
+        name.includes('male')
+      );
+    });
+    if (malePreferred) return malePreferred;
+
+    const naturalPreferred = enVoices.find(
+      (v) => v.name.includes('Natural') || v.name.includes('Google') || v.localService
+    );
+    return naturalPreferred || enVoices[0];
   }
 
   private pickBestVietnameseMaleWebSpeechVoice(): SpeechSynthesisVoice | null {
@@ -420,11 +487,12 @@ export class VieNeuGuideVoiceProvider implements IGuideVoiceProvider {
 
   private async fetchOrGetCachedVieNeuBlobUrl(
     chunkText: string,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    lang: 'vi' | 'en' = this.language
   ): Promise<string | null> {
     const clean = (chunkText || '').trim();
     if (!clean) return null;
-    const cacheKey = `${this.maleVoice}::${clean}`;
+    const cacheKey = `${lang}::${this.maleVoice}::${clean}`;
     const existing = this.clientAudioUrlCache.get(cacheKey);
     if (existing) return existing;
 
@@ -435,6 +503,7 @@ export class VieNeuGuideVoiceProvider implements IGuideVoiceProvider {
         body: JSON.stringify({
           text: clean,
           voice: this.maleVoice,
+          lang,
         }),
         signal,
       });
@@ -695,12 +764,13 @@ export class VieNeuGuideVoiceProvider implements IGuideVoiceProvider {
   }
 
   /**
-   * Dự phòng đọc bằng Web Speech API giọng Nam trầm (`pitch = 0.86`) nếu ngoại tuyến
+   * Dự phòng đọc bằng Web Speech API (hỗ trợ cả Tiếng Việt vi-VN và Tiếng Anh en-US)
    */
   private speakWithWebSpeechMaleFallback(
     cleanText: string,
     sessionId: number,
-    callbacks?: GuideVoiceCallbacks
+    callbacks?: GuideVoiceCallbacks,
+    targetLang: 'vi' | 'en' = this.language
   ): void {
     if (this.speechSessionId !== sessionId) return;
 
@@ -717,15 +787,18 @@ export class VieNeuGuideVoiceProvider implements IGuideVoiceProvider {
     try {
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(cleanText);
-      utterance.lang = 'vi-VN';
+      utterance.lang = targetLang === 'en' ? 'en-US' : 'vi-VN';
       utterance.rate = this.rate;
-      // Hạ pitch xuống 0.86 để tạo âm sắc giọng Nam ấm áp trên mọi trình duyệt
-      utterance.pitch = 0.86;
+      // Hạ pitch xuống 0.92 cho tiếng Anh hoặc 0.86 cho tiếng Việt để tạo âm sắc giọng Nam ấm áp
+      utterance.pitch = targetLang === 'en' ? 0.94 : 0.86;
       utterance.volume = this.muted ? 0 : 1;
 
-      const viVoice = this.pickBestVietnameseMaleWebSpeechVoice();
-      if (viVoice) {
-        utterance.voice = viVoice;
+      const selectedVoice =
+        targetLang === 'en'
+          ? this.pickBestEnglishMaleWebSpeechVoice()
+          : this.pickBestVietnameseMaleWebSpeechVoice();
+      if (selectedVoice) {
+        utterance.voice = selectedVoice;
       }
 
       utterance.onboundary = (event: SpeechSynthesisEvent) => {
@@ -775,11 +848,13 @@ export class VieNeuGuideVoiceProvider implements IGuideVoiceProvider {
     }
   }
 
-  public speak(text: string, callbacks?: GuideVoiceCallbacks): void {
+  public speak(text: string, callbacks?: GuideVoiceCallbacks, lang?: 'vi' | 'en'): void {
     this.stop();
 
     const cleanText = (text || '').trim();
     if (!cleanText) return;
+
+    const activeLang: 'vi' | 'en' = lang ? (lang === 'en' ? 'en' : 'vi') : this.language;
 
     this.speechSessionId += 1;
     const sessionId = this.speechSessionId;
@@ -819,19 +894,20 @@ export class VieNeuGuideVoiceProvider implements IGuideVoiceProvider {
       const currentChunk = chunks[chunkIndex];
       const blobUrl = await this.fetchOrGetCachedVieNeuBlobUrl(
         currentChunk.text,
-        abortController.signal
+        abortController.signal,
+        activeLang
       );
 
       if (this.speechSessionId !== sessionId || !this.isSpeakingState) return;
 
       if (!blobUrl) {
-        // Nếu câu đầu tiên không tải được từ VieNeu thì chuyển mượt sang giọng Nam WebSpeech
+        // Nếu câu đầu tiên không tải được từ server TTS thì chuyển mượt sang WebSpeech theo đúng ngôn ngữ
         if (chunkIndex === 0) {
-          this.speakWithWebSpeechMaleFallback(cleanText, sessionId, callbacks);
+          this.speakWithWebSpeechMaleFallback(cleanText, sessionId, callbacks, activeLang);
         } else {
           const remainingText = cleanText.slice(currentChunk.startOffset).trim();
           if (remainingText) {
-            this.speakWithWebSpeechMaleFallback(remainingText, sessionId, callbacks);
+            this.speakWithWebSpeechMaleFallback(remainingText, sessionId, callbacks, activeLang);
           } else {
             this.clearProgressTimer();
             this.isSpeakingState = false;
@@ -845,7 +921,8 @@ export class VieNeuGuideVoiceProvider implements IGuideVoiceProvider {
       if (chunkIndex + 1 < chunks.length) {
         void this.fetchOrGetCachedVieNeuBlobUrl(
           chunks[chunkIndex + 1].text,
-          abortController.signal
+          abortController.signal,
+          activeLang
         );
       }
 

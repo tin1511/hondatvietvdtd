@@ -344,11 +344,9 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
   };
 
   const handleClearActivities = () => {
-    if (window.confirm('Bạn có chắc muốn xóa sạch toàn bộ lịch sử thao tác này không?')) {
-      storageService.clearActivities(currentUser.id);
-      setActivities([]);
-      showMessage('success', 'Đã xóa toàn bộ lịch sử thao tác.');
-    }
+    storageService.clearActivities(currentUser.id);
+    setActivities([]);
+    showMessage('success', 'Đã xóa toàn bộ lịch sử thao tác.');
   };
 
   const handleGuestAuth = (e: React.FormEvent) => {

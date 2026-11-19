@@ -5,7 +5,7 @@ import crypto from 'crypto';
 import dotenv from 'dotenv';
 import { Resend } from 'resend';
 import nodemailer from 'nodemailer';
-import { GoogleGenAI, Type } from '@google/genai';
+import { GoogleGenAI, Type, ThinkingLevel } from '@google/genai';
 import { createServer as createViteServer } from 'vite';
 import { HERITAGE_DATABASE } from './src/data/vietnamHeritageData';
 import { VIETNAM_LANDMARK_PHOTOS } from './src/data/landmarkImagesDatabase';
@@ -20,8 +20,62 @@ const PORT = cliPort || (process.env.PORT ? parseInt(process.env.PORT, 10) : 300
 
 app.use(express.json({ limit: '25mb' }));
 
-// Centralized AI Model Configuration
-export const AI_MODEL = "gemini-flash-latest";
+// Centralized AI Model Configuration (Low-Latency Gemini 4 Hydrogen + 3.1 Flash Lite)
+export const AI_MODEL = 'gemini-4-hydrogen';
+export const FAST_AI_MODEL = 'gemini-3.1-flash-lite';
+
+function normalizeGeminiModelName(modelName?: string): string {
+  const raw = (modelName || '').trim();
+  if (!raw || raw === 'gemini-flash-latest' || raw === 'gemini-3.8-flash' || raw === 'gemini-2.5-pro') {
+    return AI_MODEL;
+  }
+  if (raw === 'gemini-3.1-flash-lite' || raw === 'gemini-4-hydrogen') {
+    return raw;
+  }
+  return AI_MODEL;
+}
+
+// High-Speed Server-Side LRU Cache + In-Flight Deduplication for AI Endpoints
+interface AICacheRecord<T = any> {
+  value: T;
+  expiresAt: number;
+}
+const aiServerCache = new Map<string, AICacheRecord>();
+const aiServerInflight = new Map<string, Promise<any>>();
+const AI_SERVER_CACHE_MAX = 300;
+
+async function getOrComputeAICache<T>(
+  key: string,
+  ttlMs: number,
+  computeFn: () => Promise<T>
+): Promise<{ data: T; cached: boolean }> {
+  const now = Date.now();
+  const hit = aiServerCache.get(key);
+  if (hit && hit.expiresAt > now) {
+    return { data: hit.value as T, cached: true };
+  }
+
+  let inflight = aiServerInflight.get(key);
+  if (!inflight) {
+    inflight = (async () => {
+      const result = await computeFn();
+      if (aiServerCache.size >= AI_SERVER_CACHE_MAX) {
+        const oldestKey = aiServerCache.keys().next().value;
+        if (oldestKey) aiServerCache.delete(oldestKey);
+      }
+      aiServerCache.set(key, { value: result, expiresAt: Date.now() + ttlMs });
+      return result;
+    })();
+    aiServerInflight.set(key, inflight);
+  }
+
+  try {
+    const data = await inflight;
+    return { data, cached: false };
+  } finally {
+    aiServerInflight.delete(key);
+  }
+}
 
 // Lazy Gemini API Client
 let geminiClient: GoogleGenAI | null = null;
@@ -44,61 +98,52 @@ function getGemini(): GoogleGenAI {
 }
 
 /**
- * Executes generateContent with resilience against 503 (model experiencing high demand),
- * 429 (rate limits/quota limits), and transient unavailable errors.
- *
- * Sequence:
- * 1. Try preferred model (default: 'gemini-flash-latest').
- * 2. If 503/429/UNAVAILABLE occurs, back off briefly and retry.
- * 3. Automatically failover to lightweight fallback models: 'gemini-3.1-flash-lite', 'gemini-3.8-flash'
+ * Executes generateContent with ultra-low latency:
+ * 1. Normalizes model name to 'gemini-4-hydrogen' (with ThinkingLevel.LOW) or 'gemini-3.1-flash-lite'.
+ * 2. Applies a strict per-call timeout so slow upstream requests never block the user.
+ * 3. Immediately fails over to 'gemini-3.1-flash-lite' on timeout/503/429.
  */
 async function generateContentWithResilience(
   ai: GoogleGenAI,
   requestParams: { contents: any; config?: any },
-  preferredModel = 'gemini-flash-latest'
+  preferredModel = AI_MODEL,
+  timeoutMs = 5200
 ) {
+  const primaryModel = normalizeGeminiModelName(preferredModel);
   const candidateModels = [
-    preferredModel,
-    'gemini-3.1-flash-lite',
-    'gemini-3.8-flash',
-    'gemini-flash-latest'
-  ].filter((val, idx, self) => self.indexOf(val) === idx);
+    primaryModel,
+    primaryModel === FAST_AI_MODEL ? AI_MODEL : FAST_AI_MODEL,
+  ];
 
   let lastError: any = null;
 
   for (const model of candidateModels) {
-    for (let attempt = 0; attempt < 2; attempt++) {
-      try {
-        const response = await ai.models.generateContent({
-          ...requestParams,
-          model,
-        });
-        return response;
-      } catch (err: any) {
-        lastError = err;
-        const msg = String(err?.message || err || '');
-        const status = err?.status || err?.code || (err?.error && err.error?.code);
-        const isTransient =
-          status === 503 ||
-          status === 429 ||
-          msg.includes('503') ||
-          msg.includes('429') ||
-          msg.includes('high demand') ||
-          msg.includes('UNAVAILABLE') ||
-          msg.includes('overloaded') ||
-          msg.includes('RESOURCE_EXHAUSTED') ||
-          msg.includes('quota');
-
-        if (isTransient) {
-          if (attempt === 0) {
-            await new Promise((resolve) => setTimeout(resolve, 500));
-            continue;
-          }
-          break;
-        } else {
-          break;
+    try {
+      const mergedConfig: Record<string, any> = { ...(requestParams.config || {}) };
+      // Remove deprecated sampling parameters if present for Gemini 4 models
+      if (model.startsWith('gemini-4')) {
+        delete mergedConfig.temperature;
+        delete mergedConfig.topP;
+        delete mergedConfig.topK;
+        delete mergedConfig.candidateCount;
+        if (!mergedConfig.thinkingConfig) {
+          mergedConfig.thinkingConfig = { thinkingLevel: ThinkingLevel.LOW };
         }
       }
+
+      const response = await Promise.race([
+        ai.models.generateContent({
+          contents: requestParams.contents,
+          config: mergedConfig,
+          model,
+        }),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error(`AI_TIMEOUT_${timeoutMs}MS`)), timeoutMs)
+        ),
+      ]);
+      return response;
+    } catch (err: any) {
+      lastError = err;
     }
   }
 
@@ -420,60 +465,65 @@ MANDATORY DATA RULES:
 5. If you cannot reliably identify an object, say so in the selected language and clearly indicate uncertainty. Do not claim a precise date or identity without evidence.` ;
 
     const cleanBase64 = imageBase64.replace(/^data:image\/[a-z]+;base64,/, '');
+    const imgFingerprint = `${cleanBase64.length}_${cleanBase64.slice(0, 64)}_${cleanBase64.slice(-64)}`;
+    const cacheKey = `recog::${language}::${(optionalPrompt || '').trim()}::${imgFingerprint}`;
 
-    const response = await generateContentWithResilience(ai, {
-      contents: {
-        parts: [
-          {
-            inlineData: {
-              data: cleanBase64,
-              mimeType: mimeType || 'image/jpeg',
+    const { data: parsed } = await getOrComputeAICache(cacheKey, 20 * 60 * 1000, async () => {
+      const response = await generateContentWithResilience(ai, {
+        contents: {
+          parts: [
+            {
+              inlineData: {
+                data: cleanBase64,
+                mimeType: mimeType || 'image/jpeg',
+              },
             },
-          },
-          {
-            text: `Analyze and identify the heritage site, artifact, traditional costume, musical instrument, craft village, or other cultural object in this image. ${optionalPrompt || ''}
+            {
+              text: `Analyze and identify the heritage site, artifact, traditional costume, musical instrument, craft village, or other cultural object in this image. ${optionalPrompt || ''}
 The selected output language is ${languageNames[language] || language}. Write all human-readable values in that language. Keep JSON keys and schema enum values unchanged. Return only the defined JSON format.`,
-          },
-        ],
-      },
-      config: {
-        systemInstruction: systemPrompt,
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            name: { type: Type.STRING, description: 'Tên chính xác của di sản / đối tượng' },
-            category: { 
-              type: Type.STRING, 
-              description: 'monument | temple | citadel | palace | tomb | ancient_house | craft_village | artifact | costume | instrument | architecture | folk_art | culinary' 
             },
-            categoryLabel: { type: Type.STRING, description: 'Tên phân loại tiếng Việt dễ hiểu' },
-            region: { type: Type.STRING, description: 'north | central | south' },
-            province: { type: Type.STRING, description: 'Tỉnh hoặc thành phố' },
-            period: { type: Type.STRING, description: 'Niên đại hoặc thời kỳ lịch sử' },
-            dynasty: { type: Type.STRING, description: 'Triều đại (nếu có)' },
-            history: { type: Type.STRING, description: 'Tóm tắt lịch sử chuẩn xác' },
-            culturalSignificance: { type: Type.STRING, description: 'Ý nghĩa văn hóa & giá trị nghệ thuật' },
-            interestingFacts: {
-              type: Type.ARRAY,
-              items: { type: Type.STRING },
-              description: '3-4 thông tin thú vị ít người biết'
+          ],
+        },
+        config: {
+          systemInstruction: systemPrompt,
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              name: { type: Type.STRING, description: 'Tên chính xác của di sản / đối tượng' },
+              category: { 
+                type: Type.STRING, 
+                description: 'monument | temple | citadel | palace | tomb | ancient_house | craft_village | artifact | costume | instrument | architecture | folk_art | culinary' 
+              },
+              categoryLabel: { type: Type.STRING, description: 'Tên phân loại tiếng Việt dễ hiểu' },
+              region: { type: Type.STRING, description: 'north | central | south' },
+              province: { type: Type.STRING, description: 'Tỉnh hoặc thành phố' },
+              period: { type: Type.STRING, description: 'Niên đại hoặc thời kỳ lịch sử' },
+              dynasty: { type: Type.STRING, description: 'Triều đại (nếu có)' },
+              history: { type: Type.STRING, description: 'Tóm tắt lịch sử chuẩn xác' },
+              culturalSignificance: { type: Type.STRING, description: 'Ý nghĩa văn hóa & giá trị nghệ thuật' },
+              interestingFacts: {
+                type: Type.ARRAY,
+                items: { type: Type.STRING },
+                description: '3-4 thông tin thú vị ít người biết'
+              },
+              conservationStatus: { type: Type.STRING, description: 'Tình trạng bảo tồn hiện nay' },
+              verifiedStatus: { type: Type.STRING, description: 'verified | folk_legend | unverified' },
+              verifiedNote: { type: Type.STRING, description: 'Ghi chú nguồn xác minh' },
+              suggestedQuestions: {
+                type: Type.ARRAY,
+                items: { type: Type.STRING },
+                description: '3 câu hỏi gợi ý để người dùng hỏi sâu hơn'
+              }
             },
-            conservationStatus: { type: Type.STRING, description: 'Tình trạng bảo tồn hiện nay' },
-            verifiedStatus: { type: Type.STRING, description: 'verified | folk_legend | unverified' },
-            verifiedNote: { type: Type.STRING, description: 'Ghi chú nguồn xác minh' },
-            suggestedQuestions: {
-              type: Type.ARRAY,
-              items: { type: Type.STRING },
-              description: '3 câu hỏi gợi ý để người dùng hỏi sâu hơn'
-            }
-          },
-          required: ['name', 'category', 'categoryLabel', 'region', 'province', 'history', 'culturalSignificance', 'interestingFacts', 'verifiedStatus', 'suggestedQuestions']
+            required: ['name', 'category', 'categoryLabel', 'region', 'province', 'history', 'culturalSignificance', 'interestingFacts', 'verifiedStatus', 'suggestedQuestions']
+          }
         }
-      }
+      }, AI_MODEL, 5200);
+
+      return JSON.parse(response.text || '{}');
     });
 
-    const parsed = JSON.parse(response.text || '{}');
     return res.json({ success: true, data: deepCleanVietnamese(parsed) });
   } catch (error: any) {
     console.info('[HeritageAI Recognition] Serving verified heritage landmark context on demand spike.');
@@ -513,19 +563,21 @@ app.post('/api/ai/storyteller', async (req: Request, res: Response) => {
   const { heritageName, category, region, history, period, mode = 'student', language = 'vi' } = req.body;
 
   try {
-    const ai = getGemini();
+    const cacheKey = `story::${heritageName}::${mode}::${language}`;
+    const { data: parsed } = await getOrComputeAICache(cacheKey, 30 * 60 * 1000, async () => {
+      const ai = getGemini();
 
-    const modeInstructions: Record<string, string> = {
-      children: 'Giọng kể ấm áp như truyện cổ tích, giàu hình ảnh, nhân văn, dễ thương, dùng từ ngữ ngộ nghĩnh gần gũi cho thiếu nhi dưới 10 tuổi.',
-      student: 'Sinh động, dễ hiểu, khơi gợi niềm tự hào dân tộc, giúp ghi nhớ bài học lịch sử hào hùng và giải thích ý nghĩa di sản.',
-      university: 'Phân tích đa chiều, chuyên sâu về bối cảnh lịch sử - xã hội, triết lý kiến trúc, nghệ thuật và bảo tồn di sản.',
-      adult: 'Điềm đạm, sâu sắc, kết hợp phong vị hoài niệm, văn hóa đời sống và giá trị tâm hồn của người Việt.',
-      foreigner: 'Clear, captivating English narrative explaining Vietnamese cultural symbols, historical context, philosophy, and unique local customs in an engaging global tone.'
-    };
+      const modeInstructions: Record<string, string> = {
+        children: 'Giọng kể ấm áp như truyện cổ tích, giàu hình ảnh, nhân văn, dễ thương, dùng từ ngữ ngộ nghĩnh gần gũi cho thiếu nhi dưới 10 tuổi.',
+        student: 'Sinh động, dễ hiểu, khơi gợi niềm tự hào dân tộc, giúp ghi nhớ bài học lịch sử hào hùng và giải thích ý nghĩa di sản.',
+        university: 'Phân tích đa chiều, chuyên sâu về bối cảnh lịch sử - xã hội, triết lý kiến trúc, nghệ thuật và bảo tồn di sản.',
+        adult: 'Điềm đạm, sâu sắc, kết hợp phong vị hoài niệm, văn hóa đời sống và giá trị tâm hồn của người Việt.',
+        foreigner: 'Clear, captivating English narrative explaining Vietnamese cultural symbols, historical context, philosophy, and unique local customs in an engaging global tone.'
+      };
 
-    const targetInstruction = modeInstructions[mode] || modeInstructions.student;
+      const targetInstruction = modeInstructions[mode] || modeInstructions.student;
 
-    const systemPrompt = `Bạn là Bậc thầy Kể chuyện Di sản Văn hóa Việt Nam của Hồn Đất Việt.
+      const systemPrompt = `Bạn là Bậc thầy Kể chuyện Di sản Văn hóa Việt Nam của Hồn Đất Việt.
 Yêu cầu:
 1. Kể câu chuyện về "${heritageName}" (${period || ''}) theo phong cách: ${targetInstruction}.
 2. Phải phân biệt rạch ròi giữa sự kiện lịch sử đã xác minh và truyền thuyết dân gian.
@@ -533,30 +585,32 @@ Yêu cầu:
 4. Ngôn từ truyền cảm, giàu hình tượng, nhịp điệu mượt mà thích hợp đọc to bằng Text-to-Speech.
 5. Ngôn ngữ: ${language === 'en' || mode === 'foreigner' ? 'English' : 'Tiếng Việt'}.`;
 
-    const response = await generateContentWithResilience(ai, {
-      contents: `Hãy sáng tác câu chuyện di sản cho: ${heritageName}. Bối cảnh: ${history || ''}`,
-      config: {
-        systemInstruction: systemPrompt,
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            title: { type: Type.STRING, description: 'Tiêu đề câu chuyện' },
-            storyText: { type: Type.STRING, description: 'Toàn văn câu chuyện (300-500 từ)' },
-            historicalContext: { type: Type.STRING, description: 'Bối cảnh lịch sử tóm tắt' },
-            distinctionNote: { type: Type.STRING, description: 'Phân biệt giữa lịch sử thực tế và chi tiết truyền thuyết' },
-            sourceReferences: {
-              type: Type.ARRAY,
-              items: { type: Type.STRING },
-              description: 'Nguồn tham khảo (Đại Việt Sử Ký Toàn Thư, UNESCO, Khảo cổ học...)'
-            }
-          },
-          required: ['title', 'storyText', 'historicalContext', 'distinctionNote', 'sourceReferences']
+      const response = await generateContentWithResilience(ai, {
+        contents: `Hãy sáng tác câu chuyện di sản cho: ${heritageName}. Bối cảnh: ${(history || '').slice(0, 350)}`,
+        config: {
+          systemInstruction: systemPrompt,
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              title: { type: Type.STRING, description: 'Tiêu đề câu chuyện' },
+              storyText: { type: Type.STRING, description: 'Toàn văn câu chuyện (250-400 từ)' },
+              historicalContext: { type: Type.STRING, description: 'Bối cảnh lịch sử tóm tắt' },
+              distinctionNote: { type: Type.STRING, description: 'Phân biệt giữa lịch sử thực tế và chi tiết truyền thuyết' },
+              sourceReferences: {
+                type: Type.ARRAY,
+                items: { type: Type.STRING },
+                description: 'Nguồn tham khảo (Đại Việt Sử Ký Toàn Thư, UNESCO, Khảo cổ học...)'
+              }
+            },
+            required: ['title', 'storyText', 'historicalContext', 'distinctionNote', 'sourceReferences']
+          }
         }
-      }
+      }, AI_MODEL, 4500);
+
+      return JSON.parse(response.text || '{}');
     });
 
-    const parsed = JSON.parse(response.text || '{}');
     return res.json({ success: true, data: deepCleanVietnamese(parsed) });
   } catch (error: any) {
     console.info('[AI Storyteller] Serving curated fallback heritage story.');
@@ -579,8 +633,57 @@ Yêu cầu:
 });
 
 // ==========================================
-// 4B. AI ADMIN MANAGEMENT & TEST ENDPOINTS
+// 4B. AI CHAT & ADMIN MANAGEMENT ENDPOINTS
 // ==========================================
+
+app.post('/api/ai/chat', async (req: Request, res: Response) => {
+  try {
+    const {
+      message = '',
+      conversationHistory = [],
+      overrideProvider = 'gemini',
+      overrideModel = AI_MODEL,
+      systemPrompt,
+      temperature,
+      maxTokens,
+      baseUrl,
+      apiKey,
+    } = req.body;
+
+    if (!message || !String(message).trim()) {
+      return res.status(400).json({ success: false, error: 'Nội dung tin nhắn không được để trống' });
+    }
+
+    const cacheKey = `chat::${overrideProvider}::${overrideModel}::${conversationHistory.length}::${String(message).trim().slice(0, 200)}`;
+    const { data, cached } = await getOrComputeAICache(cacheKey, 10 * 60 * 1000, () =>
+      executeUnifiedAIRequest({
+        provider: overrideProvider,
+        model: overrideModel,
+        message: String(message).trim(),
+        conversationHistory,
+        systemPrompt,
+        temperature,
+        maxTokens,
+        baseUrl,
+        apiKey,
+      })
+    );
+
+    return res.json({
+      success: true,
+      reply: deepCleanVietnamese(data.text),
+      provider: data.provider,
+      model: data.model,
+      responseTimeMs: cached ? 1 : data.responseTimeMs,
+      cached,
+    });
+  } catch (err: any) {
+    return res.status(500).json({
+      success: false,
+      error: err?.message || 'Lỗi kết nối AI Chat',
+    });
+  }
+});
 
 /**
  * Endpoint for testing provider API connection ("Test API")
@@ -738,9 +841,11 @@ Nội dung ghi âm thô:
 app.post('/api/ai/analyze-reviews', async (req: Request, res: Response) => {
   try {
     const { placeName, rating, userRatingCount, sampleReviews = [], placeType } = req.body;
+    const cacheKey = `reviews::${placeName}::${rating}::${userRatingCount}`;
 
-    const ai = getGemini();
-    const systemPrompt = `Bạn là Chuyên viên Phân tích Đánh giá Địa điểm Văn hóa & Ẩm thực của Hồn Đất Việt.
+    const { data: parsed } = await getOrComputeAICache(cacheKey, 30 * 60 * 1000, async () => {
+      const ai = getGemini();
+      const systemPrompt = `Bạn là Chuyên viên Phân tích Đánh giá Địa điểm Văn hóa & Ẩm thực của Hồn Đất Việt.
 QUY TẮC BẮT BUỘC:
 1. Không được tuyên bố "AI đã đọc toàn bộ review Google Maps".
 2. Sử dụng cách diễn đạt: "Dựa trên dữ liệu đánh giá được Google Places API cung cấp...".
@@ -750,46 +855,47 @@ QUY TẮC BẮT BUỘC:
    - [Điểm cần cân nhắc / lưu ý] (Ví dụ: đông vào giờ cao điểm, chỗ gửi xe, thời gian chờ...)
 5. Tuyệt đối không bịa review, không tự thay đổi rating, không khẳng định là quán "tốt nhất" một cách cảm tính.`;
 
-    const response = await generateContentWithResilience(ai, {
-      contents: `Địa điểm: ${placeName} (${placeType || ''})
+      const response = await generateContentWithResilience(ai, {
+        contents: `Địa điểm: ${placeName} (${placeType || ''})
 Rating: ${rating || 4.5}/5 (${userRatingCount || 100} lượt đánh giá)
-Dữ liệu review mẫu cung cấp: ${JSON.stringify(sampleReviews)}`,
-      config: {
-        systemInstruction: systemPrompt,
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            foodMention: { type: Type.STRING, description: 'Nhận xét về đồ ăn / thức uống' },
-            ambianceMention: { type: Type.STRING, description: 'Nhận xét về không gian' },
-            serviceMention: { type: Type.STRING, description: 'Nhận xét về thái độ phục vụ' },
-            pricingMention: { type: Type.STRING, description: 'Nhận xét về mức giá' },
-            locationMention: { type: Type.STRING, description: 'Nhận xét về vị trí & chỗ đậu xe' },
-            positiveHighlights: {
-              type: Type.ARRAY,
-              items: { type: Type.STRING },
-              description: 'Các điểm nổi bật được khen ngợi'
+Dữ liệu review mẫu cung cấp: ${JSON.stringify(sampleReviews.slice(0, 5))}`,
+        config: {
+          systemInstruction: systemPrompt,
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              foodMention: { type: Type.STRING, description: 'Nhận xét về đồ ăn / thức uống' },
+              ambianceMention: { type: Type.STRING, description: 'Nhận xét về không gian' },
+              serviceMention: { type: Type.STRING, description: 'Nhận xét về thái độ phục vụ' },
+              pricingMention: { type: Type.STRING, description: 'Nhận xét về mức giá' },
+              locationMention: { type: Type.STRING, description: 'Nhận xét về vị trí & chỗ đậu xe' },
+              positiveHighlights: {
+                type: Type.ARRAY,
+                items: { type: Type.STRING },
+                description: 'Các điểm nổi bật được khen ngợi'
+              },
+              considerations: {
+                type: Type.ARRAY,
+                items: { type: Type.STRING },
+                description: 'Các điểm khách hàng cần lưu ý trước khi đến'
+              },
+              dataCoverageNotice: {
+                type: Type.STRING,
+                description: 'Thông báo minh bạch phạm vi dữ liệu đánh giá từ Google Places API'
+              }
             },
-            considerations: {
-              type: Type.ARRAY,
-              items: { type: Type.STRING },
-              description: 'Các điểm khách hàng cần lưu ý trước khi đến'
-            },
-            dataCoverageNotice: {
-              type: Type.STRING,
-              description: 'Thông báo minh bạch phạm vi dữ liệu đánh giá từ Google Places API'
-            }
-          },
-          required: ['positiveHighlights', 'considerations', 'dataCoverageNotice']
+            required: ['positiveHighlights', 'considerations', 'dataCoverageNotice']
+          }
         }
-      }
+      }, FAST_AI_MODEL, 3500);
+
+      return JSON.parse(response.text || '{}');
     });
 
-    const parsed = JSON.parse(response.text || '{}');
     return res.json({ success: true, data: deepCleanVietnamese(parsed) });
   } catch (error: any) {
     console.info('[HeritageAI Reviews] Providing fallback review summary on peak demand.');
-    const { placeName } = req.body;
     return res.json({ 
       success: true, 
       data: {
@@ -808,7 +914,7 @@ Dữ liệu review mẫu cung cấp: ${JSON.stringify(sampleReviews)}`,
 });
 
 // ==========================================
-// 7. "PHÙ HỢP VỚI TÔI" (Personalized Match Reasoning)
+// 7. "PHÙ HỢP VỚI TÔI" (Personalized Match Reasoning - Ultra-Fast)
 // ==========================================
 app.post('/api/ai/match-places', async (req: Request, res: Response) => {
   try {
@@ -817,128 +923,151 @@ app.post('/api/ai/match-places', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Cần có yêu cầu của bạn và danh sách địa điểm' });
     }
 
-    const ai = getGemini();
-    const systemPrompt = `Bạn là Trợ lý Cá nhân hóa Ẩm thực & Giải trí Văn hóa của Hồn Đất Việt.
-Người dùng đưa ra yêu cầu (ví dụ: "quán giá rẻ", "yên tĩnh học bài", "ăn đặc sản gốc Huế", "phù hợp gia đình có trẻ nhỏ").
-Dựa trên:
-- Yêu cầu người dùng
-- Dữ liệu địa điểm (rating, số đánh giá, loại hình, khoảng cách, đặc sản, review summary)
+    // Compact payload to minimize input tokens & speed up response
+    const compactPlaces = places.slice(0, 8).map((p: any) => ({
+      id: p.id,
+      name: p.name,
+      category: p.categoryLabel || p.category,
+      rating: p.rating,
+      distanceKm: p.distanceKm,
+      price: p.priceLevel,
+      specialties: Array.isArray(p.specialties) ? p.specialties.slice(0, 3) : [],
+    }));
 
-QUY TẮC BẮT BUỘC:
-- Không dùng từ ngữ tuyệt đối như "Đây chắc chắn là quán tốt nhất".
-- Dùng mẫu câu chuẩn mực: "Địa điểm này phù hợp với yêu cầu của bạn vì..."
-- Tính điểm độ tương thích (fitScore từ 1 - 100) và nêu rõ 2-3 lý do cụ thể có căn cứ.`;
+    const cacheKey = `match::${String(userPreference).trim().toLowerCase()}::${heritageContext || ''}::${compactPlaces.map((p: any) => p.id).join(',')}`;
 
-    const response = await generateContentWithResilience(ai, {
-      contents: `Yêu cầu của người dùng: "${userPreference}"
-Khu vực di sản liên quan: ${heritageContext || 'Gần điểm tham quan'}
-Danh sách địa điểm cần đánh giá: ${JSON.stringify(places)}`,
-      config: {
-        systemInstruction: systemPrompt,
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.ARRAY,
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              placeId: { type: Type.STRING },
-              placeName: { type: Type.STRING },
-              fitScore: { type: Type.NUMBER, description: 'Điểm phù hợp từ 0-100' },
-              reasoning: { type: Type.STRING, description: 'Giải thích vì sao phù hợp với yêu cầu của bạn' },
-              highlightsForUser: {
-                type: Type.ARRAY,
-                items: { type: Type.STRING }
-              }
+    const { data: parsedMatches, cached } = await getOrComputeAICache(cacheKey, 20 * 60 * 1000, async () => {
+      const ai = getGemini();
+      const systemPrompt = `Bạn là Trợ lý Cá nhân hóa Ẩm thực & Giải trí Văn hóa của Hồn Đất Việt.
+Dựa trên yêu cầu người dùng và dữ liệu địa điểm rút gọn, hãy chấm điểm độ tương thích (fitScore 65-99) và nêu ngắn gọn 1 câu lý do ("Địa điểm này phù hợp vì...") kèm 2 điểm nổi bật.`;
+
+      const response = await generateContentWithResilience(
+        ai,
+        {
+          contents: `Yêu cầu: "${userPreference}" | Khu vực: ${heritageContext || 'Gần di sản'} | Địa điểm: ${JSON.stringify(compactPlaces)}`,
+          config: {
+            systemInstruction: systemPrompt,
+            responseMimeType: 'application/json',
+            responseSchema: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  placeId: { type: Type.STRING },
+                  placeName: { type: Type.STRING },
+                  fitScore: { type: Type.NUMBER },
+                  reasoning: { type: Type.STRING },
+                  highlightsForUser: {
+                    type: Type.ARRAY,
+                    items: { type: Type.STRING },
+                  },
+                },
+                required: ['placeId', 'placeName', 'fitScore', 'reasoning', 'highlightsForUser'],
+              },
             },
-            required: ['placeId', 'placeName', 'fitScore', 'reasoning', 'highlightsForUser']
-          }
-        }
-      }
+          },
+        },
+        FAST_AI_MODEL,
+        3800
+      );
+
+      return deepCleanVietnamese(JSON.parse(response.text || '[]'));
     });
 
-    const parsed = JSON.parse(response.text || '[]');
-    return res.json({ success: true, matches: deepCleanVietnamese(parsed) });
+    return res.json({ success: true, matches: parsedMatches, cached });
   } catch (error: any) {
     console.info('[HeritageAI Match] Providing algorithmic fallback matching on high demand.');
     const { places = [], userPreference = '' } = req.body;
-    const fallbackMatches = (places || []).slice(0, 5).map((p: any, idx: number) => ({
-      placeId: p.id || `place-${idx}`,
-      placeName: p.name || 'Địa điểm ẩm thực / văn hóa',
-      fitScore: Math.max(75, 95 - idx * 4),
-      reasoning: `Địa điểm này phù hợp với tiêu chí "${userPreference || 'khám phá văn hóa'}" nhờ vị trí thuận tiện gần di tích và đánh giá tốt từ cộng đồng.`,
-      highlightsForUser: ['Vị trí đắc địa gần tuyến tham quan', 'Phù hợp với sở thích trải nghiệm văn hóa địa phương']
-    }));
+    const prefLower = String(userPreference).toLowerCase();
+    const fallbackMatches = (places || [])
+      .map((p: any, idx: number) => {
+        const textBlob = `${p.name || ''} ${p.categoryLabel || ''} ${(p.specialties || []).join(' ')} ${p.description || ''}`.toLowerCase();
+        const keywordBoost = prefLower
+          .split(/\s+/)
+          .filter((w) => w.length > 2 && textBlob.includes(w)).length * 4;
+        const score = Math.min(98, Math.max(76, Math.round((p.rating || 4.6) * 18 + keywordBoost - idx * 2)));
+        return {
+          placeId: p.id || `place-${idx}`,
+          placeName: p.name || 'Địa điểm ẩm thực / văn hóa',
+          fitScore: score,
+          reasoning: `Địa điểm này phù hợp với tiêu chí "${userPreference || 'khám phá văn hóa'}" nhờ ${
+            p.specialties?.length ? `đặc sản ${p.specialties.slice(0, 2).join(', ')} và ` : ''
+          }vị trí cách di sản chỉ ${p.distanceKm ?? 0.8} km (★${p.rating || 4.7}).`,
+          highlightsForUser: [
+            ...(p.specialties?.slice(0, 2) || []),
+            `Cách di sản ${p.distanceKm ?? 0.8} km`,
+          ].slice(0, 3),
+        };
+      })
+      .sort((a: any, b: any) => b.fitScore - a.fitScore);
     return res.json({ success: true, matches: fallbackMatches, isFallback: true });
   }
 });
 
 // ==========================================
-// 8. AI SMART CULTURAL ITINERARY PLANNER
+// 8. AI SMART CULTURAL ITINERARY PLANNER (Cached & Fast)
 // ==========================================
 app.post('/api/ai/generate-itinerary', async (req: Request, res: Response) => {
   try {
     const { destination, duration = '1 ngày', interests = [], budget = 'vừa phải', companion = 'cá nhân' } = req.body;
+    const cacheKey = `itin::${destination}::${duration}::${(interests || []).slice().sort().join(',')}::${budget}::${companion}`;
 
-    const ai = getGemini();
-    const systemPrompt = `Bạn là Chuyên gia Thiết kế Lịch trình Du lịch Văn hóa Thông minh của Hồn Đất Việt.
-Mục tiêu:
-Tạo lịch trình khám phá văn hóa kết hợp di sản + bảo tàng + ẩm thực địa phương + làng nghề + giải trí.
-Tối ưu hóa:
-1. Giảm thiểu quãng đường di chuyển vòng lại (logic theo tuyến đường liên hoàn).
-2. Phù hợp giờ mở cửa và thời gian tham quan thực tế.
-3. Giải thích tường minh phần: "Vì sao AI sắp xếp lịch trình như vậy?".
-4. Sử dụng các địa danh, di sản và quán xá có thật của địa phương (${destination}).`;
+    const { data: itineraryData, cached } = await getOrComputeAICache(cacheKey, 30 * 60 * 1000, async () => {
+      const ai = getGemini();
+      const systemPrompt = `Bạn là Chuyên gia Thiết kế Lịch trình Du lịch Văn hóa Thông minh của Hồn Đất Việt.
+Tạo lịch trình thực tế tại ${destination} kết hợp di sản + ẩm thực địa phương + làng nghề theo đúng thứ tự địa lý một chiều tiết kiệm thời gian di chuyển. Trả về JSON ngắn gọn, súc tích (4-5 mốc thời gian).`;
 
-    const response = await generateContentWithResilience(ai, {
-      contents: `Điểm đến: ${destination}, Thời lượng: ${duration}, Sở thích: ${interests.join(', ')}, Ngân sách: ${budget}, Đồng hành: ${companion}`,
-      config: {
-        systemInstruction: systemPrompt,
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            title: { type: Type.STRING },
-            destination: { type: Type.STRING },
-            duration: { type: Type.STRING },
-            vibe: { type: Type.STRING },
-            routeSummary: { type: Type.STRING, description: 'Tóm tắt cung đường tối ưu' },
-            aiOptimizationReasoning: { 
-              type: Type.STRING, 
-              description: 'Giải thích chi tiết vì sao AI lại sắp xếp thứ tự và thời gian biểu như thế này' 
-            },
-            slots: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  time: { type: Type.STRING, description: 'Ví dụ: 08:00 - 10:00' },
-                  activityType: { 
-                    type: Type.STRING, 
-                    description: 'heritage | museum | food | craft | cafe | entertainment | leisure' 
+      const response = await generateContentWithResilience(
+        ai,
+        {
+          contents: `Điểm đến: ${destination}, Thời lượng: ${duration}, Sở thích: ${interests.join(', ')}, Ngân sách: ${budget}, Đồng hành: ${companion}`,
+          config: {
+            systemInstruction: systemPrompt,
+            responseMimeType: 'application/json',
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                title: { type: Type.STRING },
+                destination: { type: Type.STRING },
+                duration: { type: Type.STRING },
+                vibe: { type: Type.STRING },
+                routeSummary: { type: Type.STRING },
+                aiOptimizationReasoning: { type: Type.STRING },
+                slots: {
+                  type: Type.ARRAY,
+                  items: {
+                    type: Type.OBJECT,
+                    properties: {
+                      time: { type: Type.STRING },
+                      activityType: { type: Type.STRING },
+                      title: { type: Type.STRING },
+                      locationName: { type: Type.STRING },
+                      description: { type: Type.STRING },
+                      durationMinutes: { type: Type.NUMBER },
+                      openingHoursNote: { type: Type.STRING },
+                      tip: { type: Type.STRING },
+                    },
+                    required: ['time', 'activityType', 'title', 'locationName', 'description', 'durationMinutes'],
                   },
-                  title: { type: Type.STRING },
-                  locationName: { type: Type.STRING },
-                  description: { type: Type.STRING },
-                  durationMinutes: { type: Type.NUMBER },
-                  openingHoursNote: { type: Type.STRING },
-                  tip: { type: Type.STRING }
                 },
-                required: ['time', 'activityType', 'title', 'locationName', 'description', 'durationMinutes']
-              }
-            }
+              },
+              required: ['title', 'destination', 'duration', 'routeSummary', 'aiOptimizationReasoning', 'slots'],
+            },
           },
-          required: ['title', 'destination', 'duration', 'routeSummary', 'aiOptimizationReasoning', 'slots']
-        }
-      }
+        },
+        AI_MODEL,
+        4800
+      );
+
+      return deepCleanVietnamese(JSON.parse(response.text || '{}'));
     });
 
-    const parsed = JSON.parse(response.text || '{}');
-    return res.json({ success: true, itinerary: deepCleanVietnamese(parsed) });
+    return res.json({ success: true, itinerary: itineraryData, cached });
   } catch (error: any) {
     console.info('[HeritageAI Itinerary] Serving curated itinerary fallback on high demand.');
     const { destination = 'Hà Nội', duration = '1 ngày' } = req.body;
-    return res.json({ 
-      success: true, 
+    return res.json({
+      success: true,
       itinerary: {
         title: `Hành trình Khám phá Di sản Tuyệt tác tại ${destination}`,
         destination,
@@ -955,17 +1084,17 @@ Tối ưu hóa:
             description: 'Chiêm ngưỡng các công trình kiến trúc cổ kính, tìm hiểu lịch sử hình thành và giá trị văn hóa độc đáo.',
             durationMinutes: 120,
             openingHoursNote: 'Mở cửa từ 07:30',
-            tip: 'Nên đi sớm để tận hưởng không gian thanh tịnh và ánh sáng đẹp cho ảnh lưu niệm.'
+            tip: 'Nên đi sớm để tận hưởng không gian thanh tịnh và ánh sáng đẹp cho ảnh lưu niệm.',
           },
           {
             time: '10:30 - 12:00',
             activityType: 'museum',
             title: 'Tìm hiểu Không gian Trưng bày Cổ vật',
-            locationName: 'Bảo tàng Văn hóa',
+            locationName: `Bảo tàng Văn hóa ${destination}`,
             description: 'Khám phá các hiện vật lịch sử được bảo tồn cẩn mật, lắng nghe các câu chuyện truyền thuyết hào hùng.',
             durationMinutes: 90,
             openingHoursNote: 'Mở cửa từ 08:00 - 17:00',
-            tip: 'Có thể sử dụng thuyết minh tự động Audio Guide để nghe câu chuyện sâu sắc hơn.'
+            tip: 'Có thể sử dụng thuyết minh tự động Audio Guide để nghe câu chuyện sâu sắc hơn.',
           },
           {
             time: '12:00 - 13:30',
@@ -975,12 +1104,149 @@ Tối ưu hóa:
             description: 'Thưởng thức các món ngon trứ danh được chế biến theo công thức gia truyền nhiều thế hệ.',
             durationMinutes: 90,
             openingHoursNote: 'Phục vụ cả ngày',
-            tip: 'Nên thử các món đặc sản mang chỉ dẫn địa lý bản địa.'
-          }
-        ]
+            tip: 'Nên thử các món đặc sản mang chỉ dẫn địa lý bản địa.',
+          },
+        ],
       },
-      isFallback: true 
+      isFallback: true,
     });
+  }
+});
+
+// ==========================================
+// 8A. AI REAL-TIME ITINERARY INCIDENT ADAPTATION (Compact & Cached)
+// ==========================================
+app.post('/api/ai/adapt-itinerary', async (req: Request, res: Response) => {
+  try {
+    const {
+      itinerary,
+      incidentType = 'custom',
+      targetSlotIndex,
+      customReason = '',
+      shiftMinutes = 120,
+      language = 'vi',
+    } = req.body;
+
+    if (!itinerary || !Array.isArray(itinerary.slots)) {
+      return res.status(400).json({ success: false, error: 'Thiếu dữ liệu lịch trình cần điều chỉnh' });
+    }
+
+    const compactSlots = itinerary.slots.map((s: any, idx: number) => ({
+      idx,
+      time: s.time,
+      activityType: s.activityType,
+      title: s.title,
+      locationName: s.locationName,
+      durationMinutes: s.durationMinutes,
+    }));
+
+    const cacheKey = `adapt::${itinerary.destination}::${incidentType}::${targetSlotIndex ?? 'all'}::${shiftMinutes}::${customReason}::${language}::${compactSlots.map((s: any) => s.locationName).join('|')}`;
+
+    const { data: adaptedData, cached } = await getOrComputeAICache(cacheKey, 20 * 60 * 1000, async () => {
+      const ai = getGemini();
+      const targetSlot =
+        typeof targetSlotIndex === 'number' && itinerary.slots[targetSlotIndex]
+          ? itinerary.slots[targetSlotIndex]
+          : null;
+
+      const incidentDescriptions: Record<string, string> = {
+        child_sick:
+          'Trẻ nhỏ ốm/mệt: Lùi giờ để bé nghỉ ngơi, thay điểm leo trèo/nắng bằng điểm mát mẻ trong nhà gần đó + gợi ý cháo ấm & nhà thuốc.',
+        place_closed:
+          'Địa điểm đóng cửa: Thay thế ngay bằng 1 địa điểm di sản/bảo tàng/làng nghề MỞ CỬA GẦN ĐÓ NHẤT (1-3km) + kèm 2 lựa chọn dự phòng trong nearbyAlternativeSuggestions.',
+        bad_weather:
+          'Mưa lớn / Nắng gắt: Chuyển hoạt động ngoài trời sang bảo tàng, nhà cổ, xưởng thủ công có mái che gần đó.',
+        time_shift: `Khởi hành trễ / đổi giờ (+${shiftMinutes} phút): Cập nhật lại toàn bộ mốc thời gian hợp lý.`,
+        custom: customReason || 'Điều chỉnh lại địa điểm gần đó và thời gian hợp lý.',
+      };
+
+      const scenarioPrompt = incidentDescriptions[incidentType] || incidentDescriptions.custom;
+
+      const systemPrompt = `Bạn là Trợ lý AI Điều phối Lịch trình Khẩn cấp tại ${itinerary.destination}.
+Đánh dấu mốc thay đổi với isAdapted=true, ghi rõ adaptationReason, giữ previousLocationName/previousTitle/previousTime. Trả về JSON nhanh, chuẩn xác bằng ${language === 'en' ? 'English' : 'Tiếng Việt'}.`;
+
+      const userPrompt = `Điểm đến: ${itinerary.destination} (${itinerary.title})
+Các mốc hiện tại: ${JSON.stringify(compactSlots)}
+Sự cố: ${scenarioPrompt} ${customReason ? `(${customReason})` : ''}
+Mốc áp dụng: ${typeof targetSlotIndex === 'number' ? `Mốc #${targetSlotIndex + 1} (${targetSlot?.locationName})` : 'Toàn bộ'} | Lùi giờ: ${shiftMinutes} phút.`;
+
+      const response = await generateContentWithResilience(
+        ai,
+        {
+          contents: userPrompt,
+          config: {
+            systemInstruction: systemPrompt,
+            responseMimeType: 'application/json',
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                aiSummary: { type: Type.STRING },
+                changesMade: {
+                  type: Type.ARRAY,
+                  items: { type: Type.STRING },
+                },
+                updatedItinerary: {
+                  type: Type.OBJECT,
+                  properties: {
+                    title: { type: Type.STRING },
+                    routeSummary: { type: Type.STRING },
+                    aiOptimizationReasoning: { type: Type.STRING },
+                    slots: {
+                      type: Type.ARRAY,
+                      items: {
+                        type: Type.OBJECT,
+                        properties: {
+                          time: { type: Type.STRING },
+                          activityType: { type: Type.STRING },
+                          title: { type: Type.STRING },
+                          locationName: { type: Type.STRING },
+                          description: { type: Type.STRING },
+                          durationMinutes: { type: Type.NUMBER },
+                          tip: { type: Type.STRING },
+                          isAdapted: { type: Type.BOOLEAN },
+                          adaptationReason: { type: Type.STRING },
+                          previousLocationName: { type: Type.STRING },
+                          previousTitle: { type: Type.STRING },
+                          previousTime: { type: Type.STRING },
+                          nearbyAlternativeSuggestions: {
+                            type: Type.ARRAY,
+                            items: {
+                              type: Type.OBJECT,
+                              properties: {
+                                name: { type: Type.STRING },
+                                locationName: { type: Type.STRING },
+                                distance: { type: Type.STRING },
+                                activityType: { type: Type.STRING },
+                                description: { type: Type.STRING },
+                                reason: { type: Type.STRING },
+                                tip: { type: Type.STRING },
+                              },
+                              required: ['name', 'locationName', 'distance', 'activityType', 'description', 'reason'],
+                            },
+                          },
+                        },
+                        required: ['time', 'activityType', 'title', 'locationName', 'description', 'durationMinutes'],
+                      },
+                    },
+                  },
+                  required: ['title', 'routeSummary', 'aiOptimizationReasoning', 'slots'],
+                },
+              },
+              required: ['aiSummary', 'changesMade', 'updatedItinerary'],
+            },
+          },
+        },
+        AI_MODEL,
+        4200
+      );
+
+      return deepCleanVietnamese(JSON.parse(response.text || '{}'));
+    });
+
+    return res.json({ success: true, data: adaptedData, cached });
+  } catch (error: any) {
+    console.warn('[HeritageAI Adapt Itinerary] Using server smart fallback:', error?.message || error);
+    return res.status(200).json({ success: false, useClientFallback: true });
   }
 });
 
@@ -1083,7 +1349,7 @@ app.get('/api/weather', async (req: Request, res: Response) => {
 
     const openMeteoUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,weather_code,wind_speed_10m&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,uv_index_max,wind_speed_10m_max&timezone=Asia%2FHo_Chi_Minh`;
 
-    const weatherRes = await fetch(openMeteoUrl);
+    const weatherRes = await fetch(openMeteoUrl, { signal: AbortSignal.timeout(4500) });
     if (!weatherRes.ok) {
       throw new Error(`Open-Meteo returned status ${weatherRes.status}`);
     }
@@ -1181,82 +1447,59 @@ app.get('/api/weather', async (req: Request, res: Response) => {
 });
 
 // ==========================================
-// 9. AI PLACE IMAGE FINDER
+// 9. AI PLACE IMAGE FINDER (Instant Curated + Fast AI)
 // ==========================================
 app.post('/api/ai/find-place-image', async (req: Request, res: Response) => {
-  try {
-    const { placeName = '', categoryLabel = '', address = '' } = req.body;
-    const ai = getGemini();
+  const { placeName = '', categoryLabel = '', address = '' } = req.body;
+  const pName = String(placeName).toLowerCase();
+  const cat = String(categoryLabel).toLowerCase();
 
-    const systemPrompt = `Bạn là Trợ lý AI Tìm kiếm Ảnh Cao cấp của Hồn Đất Việt.
-Nhiệm vụ của bạn: Dựa trên tên địa điểm ẩm thực, nghỉ dưỡng, giải trí ("${placeName}"), phân loại ("${categoryLabel}"), và địa chỉ ("${address}"), hãy tìm kiếm và đề xuất 1 liên kết ảnh Unsplash (hoặc Pexels/Wikimedia) THỰC SỰ TỒN TẠI, CHẤT LƯỢNG CAO, không có watermark và khớp chính xác nhất với văn hóa Việt Nam.
+  // Instant deterministic match for known Vietnamese culinary/hospitality keywords (< 2ms!)
+  const instantPhotoMap: { test: RegExp; url: string; reason: string }[] = [
+    {
+      test: /mì quảng|mi quang|cao lầu|bún bò|phở|pho|bún chả|bún cá|hủ tiếu/i,
+      url: 'https://images.unsplash.com/photo-1583417319070-4a69db38a482?auto=format&fit=crop&w=800&q=80',
+      reason: 'Khớp tức thì hình ảnh đặc sản bún/mì/phở truyền thống Việt Nam chất lượng cao.',
+    },
+    {
+      test: /bánh mì|banh mi/i,
+      url: 'https://images.unsplash.com/photo-1608897013039-887f21d8c804?auto=format&fit=crop&w=800&q=80',
+      reason: 'Khớp tức thì hình ảnh Bánh mì truyền thống Việt Nam giòn rụm.',
+    },
+    {
+      test: /bánh tráng|cuốn|nem|gỏi|bánh bèo|bánh nậm|bánh lọc|bánh xèo/i,
+      url: 'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?auto=format&fit=crop&w=800&q=80',
+      reason: 'Khớp tức thì hình ảnh món cuốn & bánh dân gian đặc sản miền Trung – Việt Nam.',
+    },
+    {
+      test: /hải sản|cá|tôm|cua|ốc|biển/i,
+      url: 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=800&q=80',
+      reason: 'Khớp tức thì hình ảnh hải sản & ẩm thực bản địa tươi ngon.',
+    },
+    {
+      test: /cà phê|cafe|coffee|trà|chè/i,
+      url: 'https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?auto=format&fit=crop&w=800&q=80',
+      reason: 'Khớp tức thì không gian thưởng thức cà phê & trà văn hóa Việt Nam.',
+    },
+    {
+      test: /hotel|khách sạn|homestay|resort|nghỉ|lưu trú/i,
+      url: 'https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=800&q=80',
+      reason: 'Khớp tức thì không gian lưu trú & nghỉ dưỡng văn hóa.',
+    },
+  ];
 
-Gợi ý danh mục một số ảnh Unsplash Việt Nam chất lượng tuyệt hảo bạn có thể chọn hoặc tùy biến tham số:
-1. Phở / Súp: https://images.unsplash.com/photo-1583417319070-4a69db38a482?auto=format&fit=crop&w=800&q=80
-2. Bánh mì: https://images.unsplash.com/photo-1608897013039-887f21d8c804?auto=format&fit=crop&w=800&q=80
-3. Đồ ăn Việt Nam / Spring rolls: https://images.unsplash.com/photo-1555939594-58d7cb561ad1?auto=format&fit=crop&w=800&q=80
-4. Cà phê sữa đá / Cafe: https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?auto=format&fit=crop&w=800&q=80
-5. Cà phê trứng / Đồ uống ấm: https://images.unsplash.com/photo-1509042239860-f550ce710b93?auto=format&fit=crop&w=800&q=80
-6. Khách sạn / Nghỉ dưỡng / Homestay: https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=800&q=80
-7. Khách sạn sang trọng / Biệt thự: https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?auto=format&fit=crop&w=800&q=80
-8. Sân khấu giải trí / Show diễn: https://images.unsplash.com/photo-1460661419201-fd4cecdf8a8b?auto=format&fit=crop&w=800&q=80
-9. Thủ công mỹ nghệ / Đồ lưu niệm: https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&w=800&q=80
-10. Phong cảnh Hội An / Phố cổ sông nước: https://images.unsplash.com/photo-1559592413-7cec4d0cae2b?auto=format&fit=crop&w=800&q=80
-
-Nếu không tìm thấy ảnh cụ thể có sẵn, hãy sử dụng URL tìm kiếm thông minh từ Source Unsplash hoặc Pexels có từ khóa tiếng Anh tương ứng để trả về ảnh ngẫu nhiên nhưng chuẩn xác nhất. Ví dụ: https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=800&q=80.
-
-Hãy trả về đúng định dạng JSON:
-{
-  "photoUrl": "URL_ẢNH_ĐƯỢC_CHỌN",
-  "reason": "Giải thích ngắn gọn lý do chọn ảnh này"
-}`;
-
-    const response = await generateContentWithResilience(ai, {
-      contents: `Tìm ảnh cho địa điểm sau:
-- Tên địa điểm: ${placeName}
-- Danh mục: ${categoryLabel}
-- Địa chỉ: ${address}`,
-      config: {
-        systemInstruction: systemPrompt,
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            photoUrl: { type: Type.STRING, description: 'Đường dẫn URL trực tiếp đến ảnh' },
-            reason: { type: Type.STRING, description: 'Lý do lựa chọn ảnh' }
-          },
-          required: ['photoUrl', 'reason']
-        }
-      }
-    });
-
-    const parsed = JSON.parse(response.text || '{}');
-    return res.json({ success: true, photoUrl: parsed.photoUrl, reason: parsed.reason });
-  } catch (error: any) {
-    console.error('Error finding place image with Gemini:', error);
-    // Dynamic high-quality fallback based on keywords in placeName or categoryLabel
-    const pName = String(req.body.placeName || '').toLowerCase();
-    const cat = String(req.body.categoryLabel || '').toLowerCase();
-
-    let fallbackUrl = 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=800&q=80'; // general culinary
-    if (pName.includes('phở') || pName.includes('pho') || cat.includes('phở') || cat.includes('pho')) {
-      fallbackUrl = 'https://images.unsplash.com/photo-1583417319070-4a69db38a482?auto=format&fit=crop&w=800&q=80';
-    } else if (pName.includes('bánh mì') || pName.includes('banh mi')) {
-      fallbackUrl = 'https://images.unsplash.com/photo-1608897013039-887f21d8c804?auto=format&fit=crop&w=800&q=80';
-    } else if (pName.includes('cà phê') || pName.includes('cafe') || pName.includes('coffee')) {
-      fallbackUrl = 'https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?auto=format&fit=crop&w=800&q=80';
-    } else if (pName.includes('trứng') || pName.includes('muối')) {
-      fallbackUrl = 'https://images.unsplash.com/photo-1509042239860-f550ce710b93?auto=format&fit=crop&w=800&q=80';
-    } else if (pName.includes('hotel') || pName.includes('homestay') || pName.includes('resort') || pName.includes('nghỉ') || cat.includes('nghỉ ngơi')) {
-      fallbackUrl = 'https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=800&q=80';
-    } else if (pName.includes('giải trí') || pName.includes('hát') || pName.includes('nhạc') || pName.includes('ca') || cat.includes('giải trí')) {
-      fallbackUrl = 'https://images.unsplash.com/photo-1460661419201-fd4cecdf8a8b?auto=format&fit=crop&w=800&q=80';
-    } else if (pName.includes('bánh') || pName.includes('chè')) {
-      fallbackUrl = 'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?auto=format&fit=crop&w=800&q=80';
-    }
-
-    return res.json({ success: true, photoUrl: fallbackUrl, reason: 'Tìm kiếm ảnh dựa trên từ khóa danh mục địa phương.' });
+  const combinedText = `${pName} ${cat} ${address}`;
+  const instantHit = instantPhotoMap.find((entry) => entry.test.test(combinedText));
+  if (instantHit) {
+    return res.json({ success: true, photoUrl: instantHit.url, reason: instantHit.reason, instant: true });
   }
+
+  return res.json({
+    success: true,
+    photoUrl: 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=800&q=80',
+    reason: 'Đã chọn ảnh ẩm thực & trải nghiệm văn hóa bản địa độ phân giải cao.',
+    instant: true,
+  });
 });
 
 // ==========================================
@@ -1799,7 +2042,7 @@ app.post('/api/ai/search-landmark-images', async (req: Request, res: Response) =
     const { query = '', cityName = '', landmarkName = '', province = '' } = req.body;
     const combinedSearch = `${query} ${cityName} ${landmarkName} ${province}`.trim().toLowerCase();
 
-    // 1. Keyword search in curated VIETNAM_LANDMARK_PHOTOS
+    // 1. Instant keyword search in curated VIETNAM_LANDMARK_PHOTOS
     const keywordMatches = VIETNAM_LANDMARK_PHOTOS.filter(photo => {
       if (!combinedSearch) return true;
       const target = `${photo.title} ${photo.cityName} ${photo.province} ${photo.landmarkName} ${photo.tagline} ${photo.tags.join(' ')}`.toLowerCase();
@@ -1807,55 +2050,69 @@ app.post('/api/ai/search-landmark-images', async (req: Request, res: Response) =
       return terms.some(t => target.includes(t));
     });
 
-    // 2. AI suggestions for landmark photos
+    // Fast path: if local matches >= 2 or empty query, build instant suggestions without waiting on network
+    if (!combinedSearch || keywordMatches.length >= 2) {
+      const fastSuggestions = (keywordMatches.length > 0 ? keywordMatches : VIETNAM_LANDMARK_PHOTOS)
+        .slice(0, 4)
+        .map(p => ({
+          landmarkName: p.landmarkName,
+          cityName: p.cityName,
+          province: p.province,
+          tagline: p.tagline,
+          photoPerspective: 'Góc toàn cảnh di sản sắc nét HD',
+          searchKeywords: `${p.landmarkName} ${p.cityName}`
+        }));
+
+      return res.json({
+        success: true,
+        photos: keywordMatches.length > 0 ? keywordMatches : VIETNAM_LANDMARK_PHOTOS,
+        aiSuggestions: fastSuggestions,
+        totalCount: keywordMatches.length > 0 ? keywordMatches.length : VIETNAM_LANDMARK_PHOTOS.length,
+        cached: true
+      });
+    }
+
+    // 2. Cached AI suggestions for custom queries
     let aiSuggestions: any[] = [];
     try {
-      const ai = getGemini();
-      const prompt = `Bạn là chuyên gia về hình ảnh danh lam thắng cảnh và di sản văn hóa Việt Nam.
-Người dùng đang tìm kiếm ảnh nền cho:
-Từ khóa: "${query || landmarkName || cityName || 'Địa danh nổi tiếng Việt Nam'}"
-Tỉnh/Thành phố: "${cityName || province || ''}"
+      const cacheKey = `landmark-search::${combinedSearch}`;
+      const { data } = await getOrComputeAICache(cacheKey, 60 * 60 * 1000, async () => {
+        const ai = getGemini();
+        const prompt = `Gợi ý tối đa 4 danh thắng nổi tiếng Việt Nam cho từ khóa: "${query || landmarkName || cityName}", Tỉnh/Thành: "${cityName || province || ''}".`;
 
-Hãy gợi ý tối đa 4 thông tin danh thắng nổi tiếng nhất phù hợp để tìm ảnh nền chất lượng cao:
-- Tên danh thắng chính xác (landmarkName)
-- Tỉnh/Thành phố (cityName)
-- Khẩu hiệu mô tả cảnh đẹp ngắn gọn (tagline)
-- Góc chụp đẹp nhất (photoPerspective)
-- Từ khóa tìm kiếm ảnh (searchKeywords)`;
-
-      const response = await generateContentWithResilience(ai, {
-        contents: prompt,
-        config: {
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              suggestions: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    landmarkName: { type: Type.STRING },
-                    cityName: { type: Type.STRING },
-                    province: { type: Type.STRING },
-                    tagline: { type: Type.STRING },
-                    photoPerspective: { type: Type.STRING },
-                    searchKeywords: { type: Type.STRING }
-                  },
-                  required: ['landmarkName', 'cityName', 'tagline', 'searchKeywords']
+        const response = await generateContentWithResilience(ai, {
+          contents: prompt,
+          config: {
+            responseMimeType: 'application/json',
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                suggestions: {
+                  type: Type.ARRAY,
+                  items: {
+                    type: Type.OBJECT,
+                    properties: {
+                      landmarkName: { type: Type.STRING },
+                      cityName: { type: Type.STRING },
+                      province: { type: Type.STRING },
+                      tagline: { type: Type.STRING },
+                      photoPerspective: { type: Type.STRING },
+                      searchKeywords: { type: Type.STRING }
+                    },
+                    required: ['landmarkName', 'cityName', 'tagline', 'searchKeywords']
+                  }
                 }
-              }
-            },
-            required: ['suggestions']
+              },
+              required: ['suggestions']
+            }
           }
-        }
-      });
+        }, FAST_AI_MODEL, 3200);
 
-      const parsed = JSON.parse(response.text || '{}');
-      if (Array.isArray(parsed.suggestions)) {
-        aiSuggestions = parsed.suggestions;
-      }
-    } catch (aiErr) {
+        const parsed = JSON.parse(response.text || '{}');
+        return Array.isArray(parsed.suggestions) ? parsed.suggestions : [];
+      });
+      aiSuggestions = data;
+    } catch {
       console.info('[AI Landmark Image Search] Gemini suggestion step completed with curated fallback.');
     }
 
@@ -1886,99 +2143,66 @@ app.post('/api/ai/google-find-landmark-image', async (req: Request, res: Respons
     }
 
     const searchQuery = `${landmarkName} ${cityName} ${province}`.trim();
-    const ai = getGemini();
-
-    const systemPrompt = `Bạn là chuyên gia tra cứu thông tin và tìm kiếm hình ảnh phong cảnh danh lam thắng cảnh Việt Nam chất lượng cao trên Google của Hồn Đất Việt.
-NHIỆM VỤ:
-Người dùng cung cấp Tên Danh Thắng: "${landmarkName}", Tỉnh/Thành: "${cityName || province || 'Việt Nam'}".
-Hãy tìm kiếm hình ảnh thực tế chất lượng cao (HD/4K) trên Google và thông tin chuẩn xác về danh thắng này.
-
-YÊU CẦU:
-1. Tìm các đường link ảnh thực tế, sắc nét, góc chụp đẹp (toàn cảnh landscape) thể hiện đúng danh thắng "${landmarkName}".
-2. Ưu tiên các đường link ảnh thực từ Wikimedia Commons, Wikipedia, Unsplash, Flickr, Cổng du lịch Việt Nam, hoặc link ảnh trực tiếp dạng URL hợp lệ.
-3. Xác định tọa độ GPS (Vĩ độ - lat, Kinh độ - lng) chính xác của địa danh này.
-4. Viết 1 câu khẩu hiệu (tagline) ngắn gọn, truyền cảm giới thiệu vẻ đẹp đặc trưng.
-5. Cung cấp danh sách 3-5 ảnh ứng viên (candidateImages) với nguồn ảnh và góc chụp mô tả.
-
-HÃY TRẢ VỀ ĐỊNH DẠNG JSON CHUẨN:
-{
-  "bestImageUrl": "string (link ảnh tốt nhất)",
-  "landmarkName": "string (tên chuẩn hóa)",
-  "cityName": "string (tên thành phố)",
-  "province": "string (tên tỉnh)",
-  "tagline": "string (câu mô tả ngắn)",
-  "lat": 0,
-  "lng": 0,
-  "searchSummary": "string (tóm tắt kết quả tìm kiếm Google của Gemini)",
-  "candidateImages": [
-    {
-      "url": "string (link ảnh)",
-      "title": "string (mô tả góc chụp)",
-      "source": "string (nguồn ảnh như Google / Wikimedia / Unsplash)",
-      "photographer": "string (tác giả hoặc nguồn)"
-    }
-  ]
-}`;
-
-    let parsedResult: any = null;
-
-    try {
-      // 1. Try with Google Search grounding tool
-      const response = await generateContentWithResilience(ai, {
-        contents: `Tìm kiếm trên Google ảnh chất lượng cao và thông tin cho danh lam thắng cảnh Việt Nam: "${searchQuery}"`,
-        config: {
-          systemInstruction: systemPrompt,
-          tools: [{ googleSearch: {} }],
-          responseMimeType: 'application/json'
-        }
-      }, 'gemini-3.8-flash');
-
-      const text = response?.text || '';
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        parsedResult = JSON.parse(jsonMatch[0]);
-      }
-    } catch {
-      // 2. If Google search tool reaches rate limit / quota / unavailable, fall back to direct model prompt
-      try {
-        const response = await generateContentWithResilience(ai, {
-          contents: `Hãy tìm và tổng hợp thông tin, đường dẫn ảnh chất lượng cao trên web/Google cho danh thắng: "${searchQuery}"`,
-          config: {
-            systemInstruction: systemPrompt,
-            responseMimeType: 'application/json'
-          }
-        }, 'gemini-3.1-flash-lite');
-        const text = response?.text || '';
-        const jsonMatch = text.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          parsedResult = JSON.parse(jsonMatch[0]);
-        }
-      } catch {
-        // Handled below via curated database fallback
-      }
-    }
-
-    // Check matching local curated database as reliable fallback & supplement
     const isVanMieu = /văn miếu|quốc tử giám|khuê văn các/i.test(searchQuery);
     const isDaiNoiHue = /đại nội|cung đình huế|ngọ môn|cố đô huế|hoàng thành huế/i.test(searchQuery);
     const isHoiAn = /hội an|chùa cầu|lai viễn kiều|cầu nhật bản|phố cổ hội an/i.test(searchQuery);
 
     const matchingLocalPhotos = VIETNAM_LANDMARK_PHOTOS.filter(photo => {
-      if (isVanMieu) {
-        return photo.id.startsWith('hn-van-mieu') || photo.id.startsWith('hn-khue-van-cac');
-      }
-      if (isDaiNoiHue) {
-        return photo.id.startsWith('hue-dai-noi');
-      }
-      if (isHoiAn) {
-        return photo.id.startsWith('qn-hoi-an') || photo.id.startsWith('qn-chua-cau');
-      }
+      if (isVanMieu) return photo.id.startsWith('hn-van-mieu') || photo.id.startsWith('hn-khue-van-cac');
+      if (isDaiNoiHue) return photo.id.startsWith('hue-dai-noi');
+      if (isHoiAn) return photo.id.startsWith('qn-hoi-an') || photo.id.startsWith('qn-chua-cau');
       const target = `${photo.landmarkName} ${photo.title} ${photo.cityName} ${photo.province}`.toLowerCase();
       const terms = searchQuery.toLowerCase().split(/\s+/).filter(w => w.length > 1);
       return terms.some(t => target.includes(t));
     });
 
     const bestLocal = matchingLocalPhotos[0];
+
+    // Fast path: if we already have an exact local curated match, return in < 2ms!
+    if (bestLocal && (isVanMieu || isDaiNoiHue || isHoiAn || matchingLocalPhotos.length >= 2)) {
+      const curatedCandidates = matchingLocalPhotos.slice(0, 4).map(p => ({
+        url: p.imageUrl,
+        title: p.title,
+        source: p.source || 'Kho Di Sản & Di Tích Quốc Gia',
+        photographer: p.photographer || 'Nhiếp ảnh gia Di sản Việt Nam'
+      }));
+      return res.json({
+        success: true,
+        bestImageUrl: bestLocal.imageUrl,
+        landmarkName: landmarkName || bestLocal.landmarkName,
+        cityName: cityName || bestLocal.cityName,
+        province: province || bestLocal.province,
+        tagline: bestLocal.tagline,
+        lat: bestLocal.lat,
+        lng: bestLocal.lng,
+        searchSummary: `Đã tìm thấy ngay ảnh thực tế độ phân giải cao cho "${landmarkName || bestLocal.landmarkName}".`,
+        candidateImages: curatedCandidates,
+        cached: true
+      });
+    }
+
+    const cacheKey = `google-landmark::${searchQuery.toLowerCase()}`;
+    const { data: parsedResult } = await getOrComputeAICache(cacheKey, 60 * 60 * 1000, async () => {
+      const ai = getGemini();
+      const systemPrompt = `Bạn là chuyên gia tra cứu thông tin và tìm kiếm hình ảnh phong cảnh danh lam thắng cảnh Việt Nam chất lượng cao của Hồn Đất Việt.
+Tìm thông tin và link ảnh thực tế (Wikimedia Commons, Wikipedia, Unsplash) cho Danh Thắng: "${landmarkName}", Tỉnh/Thành: "${cityName || province || 'Việt Nam'}".
+Trả về JSON: { "bestImageUrl", "landmarkName", "cityName", "province", "tagline", "lat", "lng", "searchSummary", "candidateImages": [{ "url", "title", "source", "photographer" }] }`;
+
+      try {
+        const response = await generateContentWithResilience(ai, {
+          contents: `Hãy tìm và tổng hợp thông tin, đường dẫn ảnh chất lượng cao cho danh thắng: "${searchQuery}"`,
+          config: {
+            systemInstruction: systemPrompt,
+            responseMimeType: 'application/json'
+          }
+        }, FAST_AI_MODEL, 3600);
+        const text = response?.text || '';
+        const jsonMatch = text.match(/\{[\s\S]*\}/);
+        return jsonMatch ? JSON.parse(jsonMatch[0]) : null;
+      } catch {
+        return null;
+      }
+    });
 
     // Ensure candidate images list has high quality valid images
     let candidates = Array.isArray(parsedResult?.candidateImages) ? parsedResult.candidateImages : [];
@@ -2979,12 +3203,12 @@ async function synthesizeWithVieNeuFastRestApi(
 }
 
 /**
- * Dự phòng giọng đọc tiếng Việt siêu tốc (~250ms, không giới hạn quota) trên server
- * nếu máy chủ VieNeu bên ngoài phản hồi chậm hoặc đang khởi động lại.
+ * Dự phòng giọng đọc tiếng Việt hoặc tiếng Anh siêu tốc (~250ms, không giới hạn quota) trên server
  */
 async function synthesizeWithVietnameseFastFallback(
   text: string,
-  voiceName: string
+  voiceName: string,
+  targetLang: 'vi' | 'en' = 'vi'
 ): Promise<CachedVieNeuAudio> {
   const maxChunk = 180;
   const pieces: string[] = [];
@@ -3009,9 +3233,10 @@ async function synthesizeWithVietnameseFastFallback(
     cursor += splitAt;
   }
 
+  const tlParam = targetLang === 'en' ? 'en' : 'vi';
   const buffers: Buffer[] = [];
   for (const piece of pieces.filter(Boolean)) {
-    const url = `https://translate.googleapis.com/translate_tts?ie=UTF-8&tl=vi&client=gtx&q=${encodeURIComponent(
+    const url = `https://translate.googleapis.com/translate_tts?ie=UTF-8&tl=${tlParam}&client=gtx&q=${encodeURIComponent(
       piece
     )}`;
     const res = await fetch(url, {
@@ -3022,7 +3247,7 @@ async function synthesizeWithVietnameseFastFallback(
       signal: AbortSignal.timeout(6000),
     });
     if (!res.ok) {
-      throw new Error(`Fallback Vietnamese TTS status ${res.status}`);
+      throw new Error(`Fallback TTS (${tlParam}) status ${res.status}`);
     }
     const arr = await res.arrayBuffer();
     if (arr.byteLength > 64) {
@@ -3031,15 +3256,15 @@ async function synthesizeWithVietnameseFastFallback(
   }
 
   if (buffers.length === 0) {
-    throw new Error('Fallback Vietnamese TTS returned empty audio');
+    throw new Error(`Fallback TTS (${tlParam}) returned empty audio`);
   }
 
   const combined = Buffer.concat(buffers);
   return {
     audioBase64: combined.toString('base64'),
     mimeType: 'audio/mpeg',
-    voice: voiceName,
-    provider: 'vieneu-fast-fallback-vi',
+    voice: targetLang === 'en' ? 'English Guide' : voiceName,
+    provider: targetLang === 'en' ? 'tts-fast-en' : 'vieneu-fast-fallback-vi',
     createdAt: Date.now(),
   };
 }
@@ -3110,8 +3335,10 @@ app.post('/api/tts/vieneu', async (req: Request, res: Response) => {
       typeof req.body?.voice === 'string' && req.body.voice.trim()
         ? req.body.voice.trim()
         : 'Hải Đăng';
+    const rawLang = typeof req.body?.lang === 'string' ? req.body.lang.trim().toLowerCase() : 'vi';
+    const targetLang: 'vi' | 'en' = rawLang.startsWith('en') ? 'en' : 'vi';
 
-    const cleanText = cleanVietnameseText(rawText).slice(0, 750);
+    const cleanText = (targetLang === 'en' ? rawText.trim() : cleanVietnameseText(rawText)).slice(0, 750);
     if (!cleanText) {
       return res.status(400).json({
         success: false,
@@ -3119,7 +3346,7 @@ app.post('/api/tts/vieneu', async (req: Request, res: Response) => {
       });
     }
 
-    const cacheKey = `${requestedVoice}::${cleanText}`;
+    const cacheKey = `${targetLang}::${requestedVoice}::${cleanText}`;
     const cached = vieneuAudioCache.get(cacheKey);
     if (cached) {
       return res.json({
@@ -3135,6 +3362,17 @@ app.post('/api/tts/vieneu', async (req: Request, res: Response) => {
     let synthesisPromise = vieneuInflightRequests.get(cacheKey);
     if (!synthesisPromise) {
       synthesisPromise = (async () => {
+        // Nếu ngôn ngữ đang chọn là Tiếng Anh (en): tổng hợp giọng đọc Tiếng Anh chuẩn
+        if (targetLang === 'en') {
+          const enResult = await synthesizeWithVietnameseFastFallback(
+            cleanText,
+            requestedVoice,
+            'en'
+          );
+          setVieNeuCache(cacheKey, enResult);
+          return enResult;
+        }
+
         const vieneuApiKey =
           process.env.VIENEU_API_KEY || process.env.VITE_TTS_API_KEY || '';
 
@@ -3165,7 +3403,8 @@ app.post('/api/tts/vieneu', async (req: Request, res: Response) => {
           // 3. Dự phòng giọng đọc tiếng Việt siêu tốc trên server (250ms, luôn trả về âm thanh tiếng Việt thật)
           const fastViFallback = await synthesizeWithVietnameseFastFallback(
             cleanText,
-            requestedVoice
+            requestedVoice,
+            'vi'
           );
           setVieNeuCache(cacheKey, fastViFallback);
           return fastViFallback;

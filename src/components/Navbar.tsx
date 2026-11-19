@@ -287,8 +287,8 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
         </div>
 
-        {/* Row 2: Primary Nav — compact horizontal bar on mobile, spacious on desktop */}
-        <nav className="flex items-center gap-1 sm:gap-1.5 py-1.5 sm:py-2 px-0.5 overflow-x-auto scrollbar-none border-t border-[var(--gold)]/40">
+        {/* Row 2: Primary Nav — hidden on mobile (< md) because MobileBottomNav is fixed at the bottom; spacious on desktop */}
+        <nav className="hidden md:flex items-center gap-1.5 py-2 px-0.5 overflow-x-auto scrollbar-none border-t border-[var(--gold)]/40">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive =

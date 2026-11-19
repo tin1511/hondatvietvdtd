@@ -30,6 +30,7 @@ import { geolocationService, calculateDistanceKm, formatTravelEstimate } from '.
 import { getSafeHeritageImageUrl, handleImageError } from '../utils/imageUtils';
 import { languageService } from '../services/languageService';
 import { HeritageEditModal } from './HeritageEditModal';
+import { triggerInAppMapRoute } from '../services/routeNavigationService';
 
 interface HeritageDetailModalProps {
   heritage: HeritageItem | null;
@@ -434,17 +435,25 @@ export const HeritageDetailModal: React.FC<HeritageDetailModalProps> = ({
         {/* Action Button Footer Toolbar */}
         <div className="p-3 sm:p-4 bg-stone-950 border-t border-stone-800 flex flex-wrap items-center justify-between gap-2 shrink-0">
           <div className="flex items-center gap-2">
-            <a
-              href={mapsUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="px-3.5 py-2.5 rounded-xl bg-stone-900 hover:bg-stone-800 text-stone-200 hover:text-amber-300 border border-stone-700 text-xs font-semibold flex items-center gap-1.5 transition-all shadow cursor-pointer active:scale-95"
-              title={languageService.t('detail.map', language, 'Mở chỉ đường trên Google Maps')}
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                onNavigateToMap?.();
+                triggerInAppMapRoute({
+                  heritageId: displayHeritage.id,
+                  placeId: '__HERITAGE__',
+                  useUserGps: true,
+                });
+              }}
+              className="px-3.5 py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-[#FFFDF8] border border-emerald-500/40 text-xs font-bold flex items-center gap-1.5 transition-all shadow cursor-pointer active:scale-95"
+              title={languageService.t('detail.map', language, 'Bật GPS và chỉ đường trực tiếp trên Bản đồ Web')}
             >
-              <Navigation className="w-3.5 h-3.5 text-emerald-400" />
-              <span>{languageService.t('detail.map', language, 'Chỉ đường Maps')}</span>
-              <ExternalLink className="w-3 h-3 text-stone-400" />
-            </a>
+              <Navigation className="w-3.5 h-3.5 text-[#FFFDF8]" />
+              <span>
+                {language === 'en' ? 'GPS Route on Map' : 'Chỉ đường GPS trên Map'}
+              </span>
+            </button>
           </div>
 
           <div className="flex items-center gap-2">

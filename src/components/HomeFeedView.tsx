@@ -23,12 +23,18 @@ import {
   Palette,
   X,
   BookOpen,
+  Eye,
+  Video,
+  Sun,
+  Sunset,
+  Moon,
 } from 'lucide-react';
-import { CityLandmarkBackground, HeritageItem, HomeBackgroundConfig, UserProfile } from '../types';
+import { CityLandmarkBackground, HeritageAmbienceMode, HeritageItem, HomeBackgroundConfig, UserProfile } from '../types';
 import { guideVoiceService, triggerGuideNarration } from '../services/guideVoiceService';
 import { storageService, DEFAULT_HOME_BACKGROUNDS } from '../services/storageService';
 import { loadHomeBackgroundsFromFirebase } from '../services/systemConfigService';
 import { AdminBackgroundManagerModal } from './AdminBackgroundManagerModal';
+import { DynamicHeritageBackground } from './DynamicHeritageBackground';
 
 export interface HomeFeedViewProps {
   currentLandmark: CityLandmarkBackground;
@@ -46,6 +52,7 @@ export interface HomeFeedViewProps {
   language?: string;
   isPeekingBackground?: boolean;
   onTogglePeekBackground?: (nextVal?: boolean) => void;
+  isActiveTab?: boolean;
 }
 
 interface FullScreenFeatureData {
@@ -361,7 +368,7 @@ export const HOME_FULLSCREEN_FEATURES: readonly FullScreenFeatureData[] = [
     targetTab: 'map',
     guideId: 'nav.map',
     webpImageUrl:
-      'https://images.unsplash.com/photo-1559592413-7cec4d0cae2b?auto=format&fit=crop&w=1400&q=80&fm=webp',
+      'https://images.unsplash.com/photo-1559592413-7cec4d0cae2b?auto=format&fit=crop&w=2000&q=90&fm=webp',
     fallbackImageUrl:
       'https://upload.wikimedia.org/wikipedia/commons/a/ab/Meridian_Gate%2C_Hue_%28I%29.jpg',
     dwellSpeech:
@@ -390,7 +397,7 @@ export const HOME_FULLSCREEN_FEATURES: readonly FullScreenFeatureData[] = [
     targetTab: 'recognizer',
     guideId: 'nav.recognize',
     webpImageUrl:
-      'https://images.unsplash.com/photo-1583417319070-4a69db38a482?auto=format&fit=crop&w=1400&q=80&fm=webp',
+      'https://images.unsplash.com/photo-1583417319070-4a69db38a482?auto=format&fit=crop&w=2000&q=90&fm=webp',
     fallbackImageUrl:
       'https://upload.wikimedia.org/wikipedia/commons/3/31/Hanoi_Temple_of_Literature.jpg',
     dwellSpeech:
@@ -416,7 +423,7 @@ export const HOME_FULLSCREEN_FEATURES: readonly FullScreenFeatureData[] = [
     targetTab: 'storyteller',
     guideId: 'nav.story',
     webpImageUrl:
-      'https://images.unsplash.com/photo-1528127269322-539801943592?auto=format&fit=crop&w=1400&q=80&fm=webp',
+      'https://images.unsplash.com/photo-1528127269322-539801943592?auto=format&fit=crop&w=2000&q=90&fm=webp',
     fallbackImageUrl:
       'https://upload.wikimedia.org/wikipedia/commons/f/f3/PhoCoHoiAn.jpg',
     dwellSpeech:
@@ -442,7 +449,7 @@ export const HOME_FULLSCREEN_FEATURES: readonly FullScreenFeatureData[] = [
     targetTab: 'itinerary',
     guideId: 'nav.itinerary',
     webpImageUrl:
-      'https://images.unsplash.com/photo-1509030450996-dd1a26dda07a?auto=format&fit=crop&w=1400&q=80&fm=webp',
+      'https://images.unsplash.com/photo-1509030450996-dd1a26dda07a?auto=format&fit=crop&w=2000&q=90&fm=webp',
     fallbackImageUrl:
       'https://upload.wikimedia.org/wikipedia/commons/3/31/Hanoi_Temple_of_Literature.jpg',
     dwellSpeech:
@@ -468,7 +475,7 @@ export const HOME_FULLSCREEN_FEATURES: readonly FullScreenFeatureData[] = [
     targetTab: 'learning',
     guideId: 'nav.learning',
     webpImageUrl:
-      'https://images.unsplash.com/photo-1565193566173-7a0ee3dbe261?auto=format&fit=crop&w=1400&q=80&fm=webp',
+      'https://images.unsplash.com/photo-1565193566173-7a0ee3dbe261?auto=format&fit=crop&w=2000&q=90&fm=webp',
     fallbackImageUrl:
       'https://upload.wikimedia.org/wikipedia/commons/a/ab/Meridian_Gate%2C_Hue_%28I%29.jpg',
     dwellSpeech:
@@ -497,7 +504,7 @@ export const HOME_FULLSCREEN_FEATURES: readonly FullScreenFeatureData[] = [
     targetTab: 'profile',
     guideId: 'nav.profile',
     webpImageUrl:
-      'https://images.unsplash.com/photo-1540611025311-01df3cef54b5?auto=format&fit=crop&w=1400&q=80&fm=webp',
+      'https://images.unsplash.com/photo-1540611025311-01df3cef54b5?auto=format&fit=crop&w=2000&q=90&fm=webp',
     fallbackImageUrl:
       'https://upload.wikimedia.org/wikipedia/commons/f/f3/PhoCoHoiAn.jpg',
     dwellSpeech:
@@ -523,7 +530,7 @@ export const HOME_FULLSCREEN_FEATURES: readonly FullScreenFeatureData[] = [
     targetTab: 'community',
     guideId: 'nav.community',
     webpImageUrl:
-      'https://images.unsplash.com/photo-1582878826629-29b7ad1cdc43?auto=format&fit=crop&w=1400&q=80&fm=webp',
+      'https://images.unsplash.com/photo-1582878826629-29b7ad1cdc43?auto=format&fit=crop&w=2000&q=90&fm=webp',
     fallbackImageUrl:
       'https://upload.wikimedia.org/wikipedia/commons/a/ab/Meridian_Gate%2C_Hue_%28I%29.jpg',
     dwellSpeech:
@@ -541,8 +548,11 @@ interface FullScreenFeatureSectionProps {
   totalCount: number;
   shouldPreload: boolean;
   customImageUrl?: string;
+  customVideoUrl?: string;
   customSubtitle?: string;
   customOverlayOpacity?: number;
+  ambienceMode?: HeritageAmbienceMode;
+  enableDynamicEffects?: boolean;
   isAdmin?: boolean;
   language?: string;
   onAdminEditBackground?: (sectionId: string) => void;
@@ -550,16 +560,14 @@ interface FullScreenFeatureSectionProps {
   onBecomeActive: (indexNumber: number) => void;
   onDwellTrigger: (feature: FullScreenFeatureData) => void;
   onScrollToIndex: (indexNumber: number) => void;
+  isPeekingBackground?: boolean;
+  onTogglePeekBackground?: (nextVal?: boolean) => void;
 }
 
 const FullScreenFeatureSection: React.FC<FullScreenFeatureSectionProps> = React.memo(
   ({
     feature,
     totalCount,
-    shouldPreload,
-    customImageUrl,
-    customSubtitle,
-    customOverlayOpacity,
     isAdmin,
     language = 'vi',
     onAdminEditBackground,
@@ -567,55 +575,20 @@ const FullScreenFeatureSection: React.FC<FullScreenFeatureSectionProps> = React.
     onBecomeActive,
     onDwellTrigger,
     onScrollToIndex,
+    isPeekingBackground = false,
+    onTogglePeekBackground,
   }) => {
     const isEn = language === 'en';
     const sectionRef = useRef<HTMLElement | null>(null);
-    const [shouldLoadImage, setShouldLoadImage] = useState<boolean>(
-      shouldPreload || feature.indexNumber <= 2
-    );
     const [isEntered, setIsEntered] = useState<boolean>(feature.indexNumber === 1);
-    const effectiveInitialImg =
-      customImageUrl && customImageUrl.trim() && !customImageUrl.startsWith('/images/danang/')
-        ? customImageUrl
-        : feature.webpImageUrl;
-    const [imgSrc, setImgSrc] = useState<string>(effectiveInitialImg);
-    const [isImageLoaded, setIsImageLoaded] = useState<boolean>(false);
 
-    useEffect(() => {
-      const nextUrl =
-        customImageUrl && customImageUrl.trim() && !customImageUrl.startsWith('/images/danang/')
-          ? customImageUrl
-          : feature.webpImageUrl;
-      setImgSrc(nextUrl);
-      setIsImageLoaded(true);
-    }, [customImageUrl, feature.webpImageUrl]);
-
-    useEffect(() => {
-      if (shouldPreload) {
-        setShouldLoadImage(true);
-      }
-    }, [shouldPreload]);
-
-    // 1. IntersectionObserver cho Lazy-load trước khi cuộn tới & Hiệu ứng hiện nhẹ (< 300ms)
+    // 1. IntersectionObserver cho Hiệu ứng hiện thẻ mượt mà khi cuộn tới (< 300ms)
     useEffect(() => {
       const el = sectionRef.current;
       if (!el || typeof IntersectionObserver === 'undefined') {
-        setShouldLoadImage(true);
         setIsEntered(true);
         return;
       }
-
-      const preloadObserver = new IntersectionObserver(
-        (entries) => {
-          entries.forEach((entry) => {
-            if (entry.isIntersecting) {
-              setShouldLoadImage(true);
-              preloadObserver.disconnect();
-            }
-          });
-        },
-        { rootMargin: '100% 0px' }
-      );
 
       const activeObserver = new IntersectionObserver(
         (entries) => {
@@ -629,11 +602,9 @@ const FullScreenFeatureSection: React.FC<FullScreenFeatureSectionProps> = React.
         { threshold: [0.55] }
       );
 
-      preloadObserver.observe(el);
       activeObserver.observe(el);
 
       return () => {
-        preloadObserver.disconnect();
         activeObserver.disconnect();
       };
     }, [feature.indexNumber, onBecomeActive]);
@@ -682,44 +653,31 @@ const FullScreenFeatureSection: React.FC<FullScreenFeatureSectionProps> = React.
         ref={sectionRef}
         id={`home-feature-section-${feature.indexNumber}`}
         data-feature-index={feature.indexNumber}
-        className="relative w-full h-[100dvh] min-h-[100dvh] snap-start snap-always overflow-hidden flex flex-col justify-end select-none bg-[var(--bg)]"
+        onClick={() => {
+          if (isPeekingBackground && onTogglePeekBackground) {
+            onTogglePeekBackground(false);
+          }
+        }}
+        title={
+          isPeekingBackground
+            ? isEn
+              ? 'Tap anywhere to show interface'
+              : 'Chạm vào màn hình để hiện lại giao diện'
+            : undefined
+        }
+        className={`relative w-full h-[100dvh] min-h-[100dvh] snap-start snap-always overflow-hidden flex flex-col justify-end select-none bg-transparent ${
+          isPeekingBackground ? 'cursor-pointer' : ''
+        }`}
       >
-        {/* Nền ảnh WebP phủ kín 100dvh, đặt sẵn kích thước cố định không gây nhảy layout */}
-        <div className="absolute inset-0 w-full h-full bg-[var(--bg)] pointer-events-none">
-          {shouldLoadImage && (
-            <img
-              src={imgSrc}
-              alt={feature.title}
-              width={1440}
-              height={900}
-              loading={feature.indexNumber <= 2 ? 'eager' : 'lazy'}
-              decoding="async"
-              onLoad={() => setIsImageLoaded(true)}
-              onError={() => {
-                if (imgSrc !== feature.fallbackImageUrl) {
-                  setImgSrc(feature.fallbackImageUrl);
-                }
-              }}
-              className={`w-full h-full object-cover object-center transition-opacity duration-250 ease-out ${
-                isImageLoaded ? 'opacity-95' : 'opacity-0'
-              }`}
-            />
-          )}
-          {/* 10.3. Lớp phủ gradient kem giấy dó / nâu ấm nhẹ, giữ ảnh nền Đà Nẵng sáng rõ rực rỡ */}
-          <div
-            className="absolute inset-0"
-            style={{
-              background:
-                typeof customOverlayOpacity === 'number'
-                  ? `linear-gradient(180deg, rgba(251,243,228,${Math.max(0.1, customOverlayOpacity - 0.14)}) 0%, rgba(251,243,228,0.08) 38%, rgba(59,42,32,${Math.max(0.12, customOverlayOpacity - 0.12)}) 72%, rgba(59,42,32,${customOverlayOpacity}) 100%)`
-                  : 'linear-gradient(180deg, rgba(251,243,228,0.28) 0%, rgba(251,243,228,0.08) 38%, rgba(59,42,32,0.24) 72%, rgba(59,42,32,0.48) 100%)',
-            }}
-          />
-        </div>
-
-        {/* Vùng nội dung an toàn: chừa khoảng trên cho Navbar, khoảng dưới cho BottomNav và khoảng phải cho Nhân vật 3D */}
-        <div className="relative z-10 w-full max-w-6xl mx-auto px-3 sm:px-8 pt-16 sm:pt-24 pb-20 sm:pb-24 flex flex-col justify-end h-full">
-          {/* Thẻ nội dung nền --surface (#FFFDF8) nửa trong suốt, gọn gàng trên mobile để thấy rõ ảnh nền danh thắng */}
+        {/* Vùng nội dung an toàn nổi trên nền Video cố định: ẩn mượt 100% khi người dùng bật chế độ Ngắm video nền */}
+        <div
+          className={`relative z-10 w-full max-w-6xl mx-auto px-3 sm:px-8 pt-14 md:pt-28 pb-20 sm:pb-24 flex flex-col justify-end h-full transition-all duration-300 ${
+            isPeekingBackground
+              ? 'opacity-0 pointer-events-none scale-95 invisible'
+              : 'opacity-100 pointer-events-auto scale-100'
+          }`}
+        >
+          {/* Thẻ nội dung nền --surface (#FFFDF8) nửa trong suốt, gọn gàng trên mobile để thấy rõ video nền danh thắng */}
           <div
             className={`relative max-w-2xl sm:mr-28 p-3.5 sm:p-7 rounded-2xl sm:rounded-3xl bg-[#FFFDF8]/92 backdrop-blur-md border border-[var(--gold)] shadow-[0_12px_34px_rgba(59,42,32,0.2)] transition-[transform,opacity] duration-250 ease-out will-change-[transform,opacity] ${
               isEntered ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'
@@ -727,7 +685,7 @@ const FullScreenFeatureSection: React.FC<FullScreenFeatureSectionProps> = React.
           >
             <HeritageCornerOrnament />
 
-            {/* Nhãn nhỏ phía trên + Chỉ báo tiến trình X/7 + Nút Admin đổi ảnh nền */}
+            {/* Nhãn nhỏ phía trên + Chỉ báo tiến trình X/7 + Nút Admin đổi video/ảnh nền */}
             <div className="flex flex-wrap items-center justify-between gap-1.5 sm:gap-2 mb-2 sm:mb-3">
               <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
                 <span className="inline-flex items-center gap-1 px-2 sm:px-3 py-0.5 sm:py-1 rounded-lg bg-[#FBF3E4] border border-[var(--gold)] text-[var(--primary)] font-mono text-[10px] sm:text-sm font-bold tracking-wider uppercase">
@@ -757,34 +715,19 @@ const FullScreenFeatureSection: React.FC<FullScreenFeatureSectionProps> = React.
               {isAdmin && onAdminEditBackground && (
                 <button
                   type="button"
-                  onClick={() => onAdminEditBackground(feature.id)}
+                  onClick={() => onAdminEditBackground('hero')}
                   className="px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl bg-[var(--primary)] hover:bg-[var(--primary-hover)] text-[#FFFDF8] border border-[var(--gold)] font-bold text-[11px] sm:text-xs inline-flex items-center gap-1 shadow-md transition-all cursor-pointer active:scale-95"
                   title={
                     isEn
-                      ? `Edit background image for ${feature.titleEn} (Admin)`
-                      : `Chỉnh sửa ảnh nền cho ${feature.title} (Admin)`
+                      ? 'Change global background video (Admin)'
+                      : 'Đổi video nền toàn trang (Admin)'
                   }
                 >
-                  <ImageIcon className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
-                  <span>
-                    {isEn
-                      ? `Edit Bg ${feature.stepCode}`
-                      : `Đổi nền ${feature.stepCode}`}
-                  </span>
+                  <Video className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                  <span>{isEn ? 'Edit Video Bg' : 'Đổi Video nền'}</span>
                 </button>
               )}
             </div>
-
-            {customSubtitle && (
-              <p className="text-[10px] sm:text-[11px] font-bold text-[var(--jade)] mb-1 flex items-center gap-1 truncate">
-                <MapPin className="w-3 h-3 shrink-0" />
-                <span className="truncate">
-                  {isEn
-                    ? `Background: ${translateLandmarkText(customSubtitle, true)}`
-                    : `Ảnh nền: ${customSubtitle}`}
-                </span>
-              </p>
-            )}
 
             {/* Tiêu đề lớn kiểu serif trang trọng, vừa vặn trên mobile */}
             <h2 className="text-xl sm:text-4xl md:text-5xl font-serif font-bold text-[var(--primary)] tracking-tight leading-tight mb-1.5 sm:mb-2.5">
@@ -848,6 +791,22 @@ const FullScreenFeatureSection: React.FC<FullScreenFeatureSectionProps> = React.
                   <ArrowDown className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[var(--primary)]" />
                 </button>
               )}
+
+              {onTogglePeekBackground && (
+                <button
+                  type="button"
+                  onClick={() => onTogglePeekBackground(true)}
+                  title={
+                    isEn
+                      ? 'Hide interface to admire the full-screen background photo'
+                      : 'Ẩn giao diện để chiêm ngưỡng trọn vẹn ảnh nền danh thắng'
+                  }
+                  className="min-h-[40px] sm:min-h-[48px] px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl bg-[#FBF3E4] hover:bg-[#F3E5CD] border border-[var(--gold)] text-[var(--jade)] text-[11px] sm:text-sm font-bold inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <Eye className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[var(--jade)]" />
+                  <span>{isEn ? 'View Bg' : 'Ngắm ảnh nền'}</span>
+                </button>
+              )}
             </div>
 
             {/* Thanh chấm chỉ báo tiến trình (1/7 .. 7/7) ngay phía dưới nút */}
@@ -903,6 +862,9 @@ export const HomeFeedView: React.FC<HomeFeedViewProps> = ({
   currentUser,
   onSelectLandmark,
   language = 'vi',
+  isPeekingBackground = false,
+  onTogglePeekBackground,
+  isActiveTab = true,
 }) => {
   const isEn = language === 'en';
   const spokenIdsRef = useRef<Set<string>>(loadSpokenSectionIds());
@@ -1117,6 +1079,11 @@ export const HomeFeedView: React.FC<HomeFeedViewProps> = ({
     [onNavigateTab]
   );
 
+  // Reset danh sách phần đã đọc khi người dùng đổi ngôn ngữ VI <-> EN để nhân vật 3D có thể thuyết minh bằng ngôn ngữ mới
+  useEffect(() => {
+    spokenIdsRef.current.clear();
+  }, [isEn]);
+
   // Khi người dùng dừng lại ở một tính năng 2-3 giây -> Nhân vật 3D nói một câu giới thiệu ngắn (chỉ 1 lần cho mỗi phần)
   const handleFeatureDwellNarration = useCallback(
     (feature: FullScreenFeatureData) => {
@@ -1131,6 +1098,7 @@ export const HomeFeedView: React.FC<HomeFeedViewProps> = ({
         title: `${feature.stepCode}/07 · ${isEn ? feature.titleEn : feature.title}`,
         introText: isEn ? feature.dwellSpeechEn : feature.dwellSpeech,
         targetType: 'heritage',
+        lang: isEn ? 'en' : 'vi',
       });
     },
     [isMuted, isEn]
@@ -1141,8 +1109,35 @@ export const HomeFeedView: React.FC<HomeFeedViewProps> = ({
 
   return (
     <div className="relative w-full text-[var(--text)]">
+      {/* =====================================================================
+          VIDEO NỀN TOÀN MÀN HÌNH CỐ ĐỊNH DUY NHẤT (FIXED 100vw x 100dvh)
+          Vừa khít khung hình trình duyệt & chạy lặp đi lặp lại xuyên suốt 7 tính năng
+         ===================================================================== */}
+      <div className="fixed top-0 left-0 w-screen h-[100dvh] z-0 pointer-events-none overflow-hidden">
+        <DynamicHeritageBackground
+          imageUrl={heroImgSrc}
+          videoUrl={
+            homeBgConfig.sections?.['hero']?.mediaType === 'image' &&
+            !homeBgConfig.sections?.['hero']?.videoUrl
+              ? undefined
+              : homeBgConfig.sections?.['hero']?.videoUrl ||
+                currentLandmark?.videoUrl ||
+                '/assets/aistudio/hue_imperial_hd_clean.mp4'
+          }
+          alt={displayLandmarkName || 'Hồn Đất Việt'}
+          overlayOpacity={homeBgConfig.sections?.['hero']?.overlayOpacity ?? 0.34}
+          isPeeking={isPeekingBackground}
+          shouldLoad={true}
+          isActiveTab={isActiveTab}
+          priority="high"
+          ambienceMode={homeBgConfig.ambienceMode || 'auto'}
+          enableDynamicEffects={homeBgConfig.enableDynamicEffects ?? true}
+          fallbackImageUrl="/assets/aistudio/hue_imperial_poster_hd.jpg"
+        />
+      </div>
+
       {/* Thanh chỉ báo tiến trình dọc cố định bên trái trên màn hình lớn (1/7 .. 7/7) */}
-      {activeFeatureIdx >= 1 && activeFeatureIdx <= 7 && (
+      {activeFeatureIdx >= 1 && activeFeatureIdx <= 7 && !isPeekingBackground && (
         <aside
           aria-label={isEn ? 'Feature progress' : 'Tiến trình tính năng'}
           className="hidden lg:flex fixed left-5 top-1/2 -translate-y-1/2 z-30 flex-col items-center gap-2.5 bg-[#FFFDF8]/95 backdrop-blur-md border border-[var(--gold)] rounded-2xl py-3.5 px-2.5 shadow-[0_10px_28px_rgba(59,42,32,0.18)]"
@@ -1208,41 +1203,35 @@ export const HomeFeedView: React.FC<HomeFeedViewProps> = ({
 
       {/* =====================================================================
           MÀN HÌNH 0 (HERO): 100dvh, Tên HỒN ĐẤT VIỆT, câu giới thiệu văn hóa,
-          nút "Bắt đầu khám phá" cuộn xuống Tính năng 01
+          nút "Bắt đầu khám phá" cuộn xuống Tính năng 01 trên nền Video cố định
          ===================================================================== */}
       <section
         ref={heroRef}
         id="home-hero-section"
-        className="relative w-full h-[100dvh] min-h-[100dvh] snap-start snap-always overflow-hidden flex items-center justify-center bg-[var(--bg)] select-none"
+        onClick={() => {
+          if (isPeekingBackground && onTogglePeekBackground) {
+            onTogglePeekBackground(false);
+          }
+        }}
+        title={
+          isPeekingBackground
+            ? isEn
+              ? 'Tap anywhere to show interface'
+              : 'Chạm vào màn hình để hiện lại giao diện'
+            : undefined
+        }
+        className={`relative w-full h-[100dvh] min-h-[100dvh] snap-start snap-always overflow-hidden flex items-center justify-center bg-transparent select-none ${
+          isPeekingBackground ? 'cursor-pointer' : ''
+        }`}
       >
-        <div className="absolute inset-0 w-full h-full bg-[var(--bg)] pointer-events-none">
-          <img
-            src={heroImgSrc}
-            alt={displayLandmarkName || 'Hồn Đất Việt'}
-            width={1440}
-            height={900}
-            fetchPriority="high"
-            decoding="async"
-            onError={() =>
-              setHeroImgSrc(
-                'https://upload.wikimedia.org/wikipedia/commons/a/ab/Meridian_Gate%2C_Hue_%28I%29.jpg'
-              )
-            }
-            className="w-full h-full object-cover object-center opacity-95"
-          />
-          {/* 10.3. Lớp phủ gradient kem giấy dó / nâu ấm nhẹ để ảnh Đà Nẵng tươi sáng mà khung nội dung vẫn nổi bật */}
-          <div
-            className="absolute inset-0"
-            style={{
-              background:
-                typeof homeBgConfig.sections?.['hero']?.overlayOpacity === 'number'
-                  ? `linear-gradient(180deg, rgba(251,243,228,${Math.max(0.1, homeBgConfig.sections['hero'].overlayOpacity! - 0.14)}) 0%, rgba(251,243,228,0.12) 45%, rgba(59,42,32,${homeBgConfig.sections['hero'].overlayOpacity}) 100%)`
-                  : 'linear-gradient(180deg, rgba(251,243,228,0.28) 0%, rgba(251,243,228,0.12) 45%, rgba(59,42,32,0.44) 100%)',
-            }}
-          />
-        </div>
 
-        <div className="relative z-10 w-full max-w-4xl mx-auto px-3 sm:px-6 pt-3 sm:pt-8 pb-16 sm:pb-14 text-center flex flex-col justify-center max-h-[100dvh] overflow-y-auto no-scrollbar">
+        <div
+          className={`relative z-10 w-full max-w-4xl mx-auto px-3 sm:px-6 pt-14 md:pt-28 pb-16 md:pb-14 text-center flex flex-col justify-center max-h-[100dvh] overflow-y-auto no-scrollbar transition-all duration-300 ${
+            isPeekingBackground
+              ? 'opacity-0 pointer-events-none scale-95 invisible'
+              : 'opacity-100 pointer-events-auto scale-100'
+          }`}
+        >
           {/* =================================================================
               THANH BỘ LỌC NHANH VĂN HÓA (DI TÍCH · CỔ PHỤC · ẨM THỰC · LÀNG NGHỀ)
               Đặt ngay đầu trang Home giúp người dùng mobile lọc & tìm kiếm tức thì
@@ -1496,7 +1485,7 @@ export const HomeFeedView: React.FC<HomeFeedViewProps> = ({
               </div>
             )}
 
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 mb-2 sm:mb-3 text-[10px] sm:text-xs text-[var(--text-muted)] font-bold">
+            <div className="flex flex-wrap items-center justify-center gap-1.5 sm:gap-2 mb-2 sm:mb-3 text-[10px] sm:text-xs text-[var(--text-muted)] font-bold">
               <span className="text-[var(--primary)] tracking-wider uppercase">
                 {isEn ? 'VIETNAM DIGITAL HERITAGE SPACE' : 'KHÔNG GIAN DI SẢN SỐ VIỆT NAM'}
               </span>
@@ -1504,13 +1493,71 @@ export const HomeFeedView: React.FC<HomeFeedViewProps> = ({
               <button
                 type="button"
                 onClick={onOpenCityPicker}
-                className="min-h-[30px] sm:min-h-[38px] max-w-full px-2.5 sm:px-3.5 py-0.5 sm:py-1 rounded-xl bg-[#FBF3E4] hover:bg-[#F3E5CD] border border-[var(--gold)] text-[var(--jade)] font-bold inline-flex items-center gap-1 transition-colors cursor-pointer"
+                className="min-h-[30px] sm:min-h-[36px] max-w-full px-2.5 sm:px-3 py-0.5 sm:py-1 rounded-xl bg-[#FBF3E4] hover:bg-[#F3E5CD] border border-[var(--gold)] text-[var(--jade)] font-bold inline-flex items-center gap-1 transition-colors cursor-pointer"
               >
                 <MapPin className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[var(--jade)] shrink-0" />
                 <span className="truncate text-[11px] sm:text-xs">
                   {displayCityName} — {displayLandmarkName}
                 </span>
               </button>
+
+              {/* Nút chuyển nhanh sắc thái không gian (Bình minh / Hoàng hôn / Đêm hoa đăng) & Gắn Video Nền */}
+              <div className="inline-flex items-center gap-1 p-0.5 rounded-xl bg-[#FBF3E4] border border-[var(--gold)]/80">
+                {(
+                  [
+                    { id: 'dawn' as const, label: isEn ? 'Dawn' : 'Bình minh', icon: Sun },
+                    { id: 'sunset' as const, label: isEn ? 'Sunset' : 'Hoàng hôn', icon: Sunset },
+                    { id: 'lantern' as const, label: isEn ? 'Lantern' : 'Hoa đăng', icon: Moon },
+                  ] as const
+                ).map((amb) => {
+                  const AmbIcon = amb.icon;
+                  const currentAmb = homeBgConfig.ambienceMode || 'auto';
+                  const isActive = currentAmb === amb.id;
+                  return (
+                    <button
+                      key={amb.id}
+                      type="button"
+                      onClick={() => {
+                        const nextMode: HeritageAmbienceMode = isActive ? 'auto' : amb.id;
+                        const nextCfg = storageService.saveHomeBackgroundConfig({
+                          ...homeBgConfig,
+                          ambienceMode: nextMode,
+                        });
+                        setHomeBgConfig(nextCfg);
+                      }}
+                      title={
+                        isEn
+                          ? `Switch background ambience: ${amb.label}`
+                          : `Đổi sắc thái cảnh sắc nền: ${amb.label}`
+                      }
+                      className={`px-2 py-1 rounded-lg text-[10px] sm:text-[11px] font-bold inline-flex items-center gap-1 transition-all cursor-pointer ${
+                        isActive
+                          ? 'bg-[var(--primary)] text-[#FFFDF8] shadow-xs'
+                          : 'text-[var(--text)] hover:bg-[#F3E5CD]'
+                      }`}
+                    >
+                      <AmbIcon className="w-3 h-3 shrink-0" />
+                      <span className="hidden sm:inline">{amb.label}</span>
+                    </button>
+                  );
+                })}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingBgSectionId('hero');
+                    setIsBgManagerOpen(true);
+                  }}
+                  title={
+                    isEn
+                      ? 'Attach Video or Change Background'
+                      : 'Gắn Video nền (.mp4 / YouTube) hoặc đổi ảnh nền'
+                  }
+                  className="px-2 py-1 rounded-lg text-[10px] sm:text-[11px] font-bold inline-flex items-center gap-1 bg-[var(--jade)] hover:bg-[#236B6B] text-[#FFFDF8] transition-all cursor-pointer"
+                >
+                  <Video className="w-3 h-3 shrink-0" />
+                  <span>{isEn ? 'Video Bg' : 'Gắn Video'}</span>
+                </button>
+              </div>
             </div>
 
             <h1 className="text-2xl sm:text-5xl md:text-6xl font-serif font-bold tracking-tight text-[var(--text)] mb-1.5 sm:mb-2.5">
@@ -1565,6 +1612,22 @@ export const HomeFeedView: React.FC<HomeFeedViewProps> = ({
                   </>
                 )}
               </button>
+
+              {onTogglePeekBackground && (
+                <button
+                  type="button"
+                  onClick={() => onTogglePeekBackground(true)}
+                  title={
+                    isEn
+                      ? 'Hide interface to admire the full-screen background photo'
+                      : 'Ẩn giao diện để chiêm ngưỡng trọn vẹn bức ảnh nền danh thắng'
+                  }
+                  className="min-h-[40px] sm:min-h-[50px] px-3.5 sm:px-5 py-2 sm:py-3 rounded-xl sm:rounded-2xl bg-[#FBF3E4] hover:bg-[#F3E5CD] border border-[var(--gold)] text-[var(--jade)] font-bold text-xs sm:text-base inline-flex items-center gap-1.5 sm:gap-2 transition-colors cursor-pointer"
+                >
+                  <Eye className="w-4 h-4 sm:w-5 sm:h-5 text-[var(--jade)]" />
+                  <span>{isEn ? 'View Background' : 'Ngắm ảnh nền'}</span>
+                </button>
+              )}
             </div>
 
             {/* BAO QUÁT NHANH 7 TÍNH NĂNG CỐT LÕI NGAY TRÊN MÀN HÌNH ĐẦU (DỄ NHÌN BAO QUÁT TRÊN MOBILE & DESKTOP) */}
@@ -1656,8 +1719,11 @@ export const HomeFeedView: React.FC<HomeFeedViewProps> = ({
             totalCount={HOME_FULLSCREEN_FEATURES.length}
             shouldPreload={Math.abs(feature.indexNumber - activeFeatureIdx) <= 1}
             customImageUrl={secOverride?.imageUrl}
+            customVideoUrl={secOverride?.videoUrl}
             customSubtitle={secOverride?.subtitle}
             customOverlayOpacity={secOverride?.overlayOpacity}
+            ambienceMode={homeBgConfig.ambienceMode || 'auto'}
+            enableDynamicEffects={homeBgConfig.enableDynamicEffects ?? true}
             isAdmin={isAdmin}
             language={language}
             onAdminEditBackground={(sectionId) => {
@@ -1668,28 +1734,36 @@ export const HomeFeedView: React.FC<HomeFeedViewProps> = ({
             onBecomeActive={setActiveFeatureIdx}
             onDwellTrigger={handleFeatureDwellNarration}
             onScrollToIndex={scrollToSlideIndex}
+            isPeekingBackground={isPeekingBackground}
+            onTogglePeekBackground={onTogglePeekBackground}
           />
         );
       })}
 
       {/* =====================================================================
-          MÀN HÌNH CUỐI (TỔNG KẾT & LỐI TẮT TỚI CẢ 7 TÍNH NĂNG): 100dvh
+          MÀN HÌNH CUỐI (TỔNG KẾT & LỐI TẮT TỚI CẢ 7 TÍNH NĂNG): 100dvh trên nền Video cố định
          ===================================================================== */}
       <section
         ref={summaryRef}
         id="home-summary-section"
-        className="relative w-full h-[100dvh] min-h-[100dvh] snap-start snap-always overflow-hidden flex flex-col justify-center bg-[var(--bg)] select-none"
+        onClick={() => {
+          if (isPeekingBackground && onTogglePeekBackground) {
+            onTogglePeekBackground(false);
+          }
+        }}
+        className={`relative w-full h-[100dvh] min-h-[100dvh] snap-start snap-always overflow-hidden flex flex-col justify-center bg-transparent select-none ${
+          isPeekingBackground ? 'cursor-pointer' : ''
+        }`}
       >
         <div
-          className="absolute inset-0 pointer-events-none"
-          style={{
-            background:
-              'radial-gradient(circle at 50% 20%, rgba(200,150,62,0.18), rgba(251,243,228,0.98) 72%)',
-          }}
-        />
-
-        <div className="relative z-10 w-full max-w-5xl mx-auto px-4 sm:px-8 pt-20 pb-24 pr-4 sm:pr-28 flex flex-col justify-between max-h-[100dvh] overflow-y-auto no-scrollbar">
-          <div>
+          className={`relative z-10 w-full max-w-5xl mx-auto px-3 sm:px-8 pt-14 md:pt-28 pb-20 sm:pr-28 flex flex-col justify-center max-h-[100dvh] overflow-y-auto no-scrollbar transition-all duration-300 ${
+            isPeekingBackground
+              ? 'opacity-0 pointer-events-none scale-95 invisible'
+              : 'opacity-100 pointer-events-auto scale-100'
+          }`}
+        >
+          <div className="relative p-4 sm:p-7 rounded-2xl sm:rounded-3xl bg-[#FFFDF8]/92 backdrop-blur-md border border-[var(--gold)] shadow-[0_14px_38px_rgba(59,42,32,0.2)]">
+            <HeritageCornerOrnament />
             <div className="flex items-center justify-between gap-2 mb-2">
               <span className="text-xs font-mono font-bold uppercase tracking-widest text-[var(--primary)]">
                 {isEn ? 'JOURNEY SUMMARY · 7/7 FEATURES' : 'TỔNG KẾT HÀNH TRÌNH · 7/7 TÍNH NĂNG'}
@@ -1755,23 +1829,23 @@ export const HomeFeedView: React.FC<HomeFeedViewProps> = ({
                 );
               })}
             </div>
-          </div>
 
-          {/* Giới thiệu ngắn gọn dự án */}
-          <div className="mt-4 pt-3 border-t border-[var(--gold)]/45 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-[var(--text-muted)]">
-            <div className="flex items-center gap-2 text-[var(--text)]">
-              <Compass className="w-4 h-4 text-[var(--primary)] shrink-0" />
-              <span>
-                <strong className="text-[var(--primary)]">HỒN ĐẤT VIỆT</strong> —{' '}
-                {isEn
-                  ? 'Digital heritage map, AI vision recognition & voice narration platform across 34 provinces of Vietnam.'
-                  : 'Nền tảng bản đồ số, AI nhận diện & thuyết minh di sản 34 tỉnh thành Việt Nam.'}
+            {/* Giới thiệu ngắn gọn dự án */}
+            <div className="mt-4 pt-3 border-t border-[var(--gold)]/45 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-[var(--text-muted)]">
+              <div className="flex items-center gap-2 text-[var(--text)]">
+                <Compass className="w-4 h-4 text-[var(--primary)] shrink-0" />
+                <span>
+                  <strong className="text-[var(--primary)]">HỒN ĐẤT VIỆT</strong> —{' '}
+                  {isEn
+                    ? 'Digital heritage map, AI vision recognition & voice narration platform across 34 provinces of Vietnam.'
+                    : 'Nền tảng bản đồ số, AI nhận diện & thuyết minh di sản 34 tỉnh thành Việt Nam.'}
+                </span>
+              </div>
+              <span className="inline-flex items-center gap-1 text-[var(--jade)] font-bold shrink-0">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                {isEn ? 'Pride of Vietnam Heritage' : 'Tự hào Di sản Việt Nam'}
               </span>
             </div>
-            <span className="inline-flex items-center gap-1 text-[var(--jade)] font-bold shrink-0">
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              {isEn ? 'Pride of Vietnam Heritage' : 'Tự hào Di sản Việt Nam'}
-            </span>
           </div>
         </div>
       </section>

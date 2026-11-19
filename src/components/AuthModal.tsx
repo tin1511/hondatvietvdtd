@@ -257,10 +257,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   };
 
   const handleClearHistory = () => {
-    if (window.confirm('Bạn có chắc muốn xóa lịch sử thao tác của tài khoản này?')) {
-      storageService.clearActivities(currentUser.id);
-      setActivities([]);
-    }
+    storageService.clearActivities(currentUser.id);
+    setActivities([]);
   };
 
   const filteredActivities = activities.filter(a => {

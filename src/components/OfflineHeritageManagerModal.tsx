@@ -79,10 +79,8 @@ export const OfflineHeritageManagerModal: React.FC<OfflineHeritageManagerModalPr
   };
 
   const handleClearStorage = async () => {
-    if (window.confirm('Bạn có chắc chắn muốn xóa bộ nhớ đệm ngoại tuyến?')) {
-      await offlineStorageService.clearOfflineCache();
-      refreshData();
-    }
+    await offlineStorageService.clearOfflineCache();
+    refreshData();
   };
 
   const filteredHeritages = cachedHeritages.filter(h => {

@@ -39,6 +39,7 @@ import { HeritageEditModal } from './HeritageEditModal';
 import { PlaceEditModal } from './PlaceEditModal';
 import { HeritageDetailModal } from './HeritageDetailModal';
 import { getSafeHeritageImageUrl, handleImageError } from '../utils/imageUtils';
+import { triggerInAppMapRoute } from '../services/routeNavigationService';
 
 interface NearbyRecommendationWidgetProps {
   currentUser?: UserProfile;
@@ -595,15 +596,21 @@ export const NearbyRecommendationWidget: React.FC<NearbyRecommendationWidgetProp
                 </div>
 
                 <div className="p-4 pt-0 border-t border-stone-800/80 mt-2 flex gap-2">
-                  <a
-                    href={place.googleMapsUri}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex-1 py-2 px-3 rounded-xl bg-emerald-600/90 hover:bg-emerald-600 text-[#FFFDF8] font-bold text-xs flex items-center justify-center gap-1.5 transition-colors"
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onNavigateToMap();
+                      triggerInAppMapRoute({
+                        heritageId: closestHeritage.id,
+                        placeId: place.id,
+                        placeName: place.name,
+                      });
+                    }}
+                    className="flex-1 py-2 px-3 rounded-xl bg-emerald-600/90 hover:bg-emerald-600 text-[#FFFDF8] font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                   >
                     <Navigation className="w-3.5 h-3.5" />
-                    <span>Chỉ đường Maps</span>
-                  </a>
+                    <span>Chỉ đường trên Map</span>
+                  </button>
 
                   <button
                     onClick={() => onNavigateToFood('dai-noi-hue')}

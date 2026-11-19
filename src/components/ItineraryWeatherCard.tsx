@@ -129,24 +129,24 @@ export const ItineraryWeatherCard: React.FC<ItineraryWeatherCardProps> = ({
   };
 
   return (
-    <div className={`relative bg-gradient-to-br from-stone-900 via-stone-900/95 to-amber-950/20 border border-amber-500/30 rounded-3xl p-5 sm:p-6 shadow-xl shadow-stone-950/40 transition-all ${className}`}>
+    <div className={`relative bg-gradient-to-br from-stone-900 via-stone-900/95 to-amber-950/20 border border-amber-500/30 rounded-2xl sm:rounded-3xl p-3.5 sm:p-6 shadow-xl shadow-stone-950/40 transition-all ${className}`}>
       
       {/* Top Header: Badge, City Selector, Refresh */}
-      <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-stone-800/80">
+      <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3 pb-2.5 sm:pb-4 border-b border-stone-800/80">
         
         {/* Title & City Pill */}
-        <div className="flex items-center gap-2.5 flex-wrap">
-          <div className="w-8 h-8 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0 shadow-inner">
-            <CloudSun className="w-4 h-4 text-amber-400" />
+        <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap">
+          <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0 shadow-inner">
+            <CloudSun className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-400" />
           </div>
 
           <div>
             <div className="flex items-center gap-1.5">
               <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400">
-                {isEn ? 'Destination Weather Forecast' : 'Dự Báo Thời Tiết Điểm Đến'}
+                {isEn ? 'Destination Weather' : 'Thời Tiết Điểm Đến'}
               </span>
-              <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-medium">
-                {isEn ? 'Live 7-Day' : 'Trực tiếp 7 ngày'}
+              <span className="text-[9px] text-emerald-300 font-semibold">
+                · {isEn ? 'Live 7d' : '7 ngày'}
               </span>
             </div>
 
@@ -155,10 +155,10 @@ export const ItineraryWeatherCard: React.FC<ItineraryWeatherCardProps> = ({
               <button
                 type="button"
                 onClick={() => setShowCityPicker(!showCityPicker)}
-                className="group flex items-center gap-1.5 text-stone-100 hover:text-amber-300 font-serif font-bold text-base sm:text-lg transition-colors cursor-pointer"
+                className="group flex items-center gap-1 text-stone-100 hover:text-amber-300 font-serif font-bold text-sm sm:text-lg transition-colors cursor-pointer"
                 title={isEn ? 'Click to change destination' : 'Bấm để đổi thành phố khác'}
               >
-                <MapPin className="w-4 h-4 text-amber-400 group-hover:scale-110 transition-transform shrink-0" />
+                <MapPin className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-400 group-hover:scale-110 transition-transform shrink-0" />
                 <span className="underline decoration-amber-500/40 decoration-dotted underline-offset-4">
                   {weatherData?.cityName || destination}
                 </span>
@@ -269,24 +269,24 @@ export const ItineraryWeatherCard: React.FC<ItineraryWeatherCardProps> = ({
 
       {/* Main Weather Content */}
       {weatherData && (
-        <div className="space-y-4 pt-3">
+        <div className="space-y-2.5 sm:space-y-4 pt-2.5 sm:pt-3">
           
           {/* Active Day Overview Card */}
           {activeDay && (
-            <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5 sm:gap-4 items-center">
               
               {/* Primary Temp & Status (Cols 1-5) */}
-              <div className="md:col-span-5 flex items-center gap-3 sm:gap-4">
-                <span className="text-4xl sm:text-5xl select-none" role="img" aria-label={activeDay.conditionText}>
+              <div className="md:col-span-5 flex items-center gap-2.5 sm:gap-4">
+                <span className="text-3xl sm:text-5xl select-none" role="img" aria-label={activeDay.conditionText}>
                   {activeDay.conditionIcon}
                 </span>
 
                 <div>
                   <div className="flex items-baseline gap-2">
-                    <span className="text-3xl sm:text-4xl font-serif font-extrabold text-stone-100 tracking-tight">
+                    <span className="text-2xl sm:text-4xl font-serif font-extrabold text-stone-100 tracking-tight">
                       {selectedDayIndex === 0 ? `${weatherData.current.temperature}°C` : `${activeDay.tempMax}°C`}
                     </span>
-                    <span className="text-xs text-stone-400 font-medium">
+                    <span className="text-[11px] sm:text-xs text-stone-400 font-medium">
                       {isEn ? 'High:' : 'Cao:'} <strong className="text-stone-200">{activeDay.tempMax}°</strong> / {isEn ? 'Low:' : 'Thấp:'} <strong className="text-stone-400">{activeDay.tempMin}°</strong>
                     </span>
                   </div>
@@ -308,20 +308,20 @@ export const ItineraryWeatherCard: React.FC<ItineraryWeatherCardProps> = ({
               </div>
 
               {/* 4 Essential Metrics (Cols 6-12) */}
-              <div className="md:col-span-7 grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <div className="md:col-span-7 grid grid-cols-4 gap-1.5 sm:gap-2">
                 
                 {/* 1. Rain Chance */}
-                <div className="p-2.5 rounded-2xl bg-stone-950/70 border border-stone-800/80 flex flex-col justify-between">
+                <div className="p-2 sm:p-2.5 rounded-xl sm:rounded-2xl bg-stone-950/70 border border-stone-800/80 flex flex-col justify-between">
                   <div className="flex items-center justify-between text-stone-400 text-[10px]">
-                    <span>{isEn ? 'Rain Prob' : 'Xác suất mưa'}</span>
-                    <CloudRain className="w-3.5 h-3.5 text-sky-400" />
+                    <span className="truncate">{isEn ? 'Rain' : 'Mưa'}</span>
+                    <CloudRain className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-sky-400 shrink-0" />
                   </div>
-                  <div className="mt-1">
-                    <span className="text-sm font-bold text-sky-300">
+                  <div className="mt-0.5 sm:mt-1">
+                    <span className="text-xs sm:text-sm font-bold text-sky-300">
                       {activeDay.precipitationProbability}%
                     </span>
                     {activeDay.precipitationSum > 0 && (
-                      <span className="text-[9px] text-stone-400 ml-1">
+                      <span className="hidden sm:inline text-[9px] text-stone-400 ml-1">
                         ({activeDay.precipitationSum} mm)
                       </span>
                     )}
@@ -329,45 +329,45 @@ export const ItineraryWeatherCard: React.FC<ItineraryWeatherCardProps> = ({
                 </div>
 
                 {/* 2. Humidity */}
-                <div className="p-2.5 rounded-2xl bg-stone-950/70 border border-stone-800/80 flex flex-col justify-between">
+                <div className="p-2 sm:p-2.5 rounded-xl sm:rounded-2xl bg-stone-950/70 border border-stone-800/80 flex flex-col justify-between">
                   <div className="flex items-center justify-between text-stone-400 text-[10px]">
-                    <span>{isEn ? 'Humidity' : 'Độ ẩm'}</span>
-                    <Droplets className="w-3.5 h-3.5 text-blue-400" />
+                    <span className="truncate">{isEn ? 'Hum' : 'Độ ẩm'}</span>
+                    <Droplets className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-blue-400 shrink-0" />
                   </div>
-                  <div className="mt-1">
-                    <span className="text-sm font-bold text-blue-300">
+                  <div className="mt-0.5 sm:mt-1">
+                    <span className="text-xs sm:text-sm font-bold text-blue-300">
                       {weatherData.current.humidity}%
                     </span>
                   </div>
                 </div>
 
                 {/* 3. Wind Speed */}
-                <div className="p-2.5 rounded-2xl bg-stone-950/70 border border-stone-800/80 flex flex-col justify-between">
+                <div className="p-2 sm:p-2.5 rounded-xl sm:rounded-2xl bg-stone-950/70 border border-stone-800/80 flex flex-col justify-between">
                   <div className="flex items-center justify-between text-stone-400 text-[10px]">
-                    <span>{isEn ? 'Wind Speed' : 'Tốc độ gió'}</span>
-                    <Wind className="w-3.5 h-3.5 text-teal-400" />
+                    <span className="truncate">{isEn ? 'Wind' : 'Gió'}</span>
+                    <Wind className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-teal-400 shrink-0" />
                   </div>
-                  <div className="mt-1">
-                    <span className="text-sm font-bold text-teal-300">
-                      {activeDay.windSpeedMax} <span className="text-[9px] font-normal">km/h</span>
+                  <div className="mt-0.5 sm:mt-1">
+                    <span className="text-xs sm:text-sm font-bold text-teal-300">
+                      {activeDay.windSpeedMax}<span className="text-[9px] font-normal hidden sm:inline"> km/h</span>
                     </span>
                   </div>
                 </div>
 
                 {/* 4. UV Index */}
-                <div className="p-2.5 rounded-2xl bg-stone-950/70 border border-stone-800/80 flex flex-col justify-between">
+                <div className="p-2 sm:p-2.5 rounded-xl sm:rounded-2xl bg-stone-950/70 border border-stone-800/80 flex flex-col justify-between">
                   <div className="flex items-center justify-between text-stone-400 text-[10px]">
-                    <span>{isEn ? 'UV Index' : 'Chỉ số UV'}</span>
-                    <Sun className="w-3.5 h-3.5 text-amber-400" />
+                    <span className="truncate">UV</span>
+                    <Sun className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-amber-400 shrink-0" />
                   </div>
-                  <div className="mt-1 flex items-center gap-1.5">
-                    <span className="text-sm font-bold text-amber-300">
+                  <div className="mt-0.5 sm:mt-1 flex items-center gap-1">
+                    <span className="text-xs sm:text-sm font-bold text-amber-300">
                       {activeDay.uvIndexMax}
                     </span>
                     {(() => {
                       const badge = getUvBadge(activeDay.uvIndexMax);
                       return (
-                        <span className={`text-[8px] px-1 py-0.2 rounded border font-semibold ${badge.color}`}>
+                        <span className={`hidden sm:inline text-[8px] px-1 py-0.2 rounded border font-semibold ${badge.color}`}>
                           {badge.label}
                         </span>
                       );
@@ -382,9 +382,9 @@ export const ItineraryWeatherCard: React.FC<ItineraryWeatherCardProps> = ({
 
           {/* Severe Weather Warning Banner (If applicable) */}
           {(activeDay?.warningNoticeVi || activeDay?.warningNoticeEn) && (
-            <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/40 text-amber-200 text-xs flex items-start gap-2.5 animate-fadeIn">
-              <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-              <p className="leading-relaxed">
+            <div className="p-2.5 sm:p-3.5 rounded-xl sm:rounded-2xl bg-amber-500/10 border border-amber-500/40 text-amber-200 text-[11px] sm:text-xs flex items-start gap-2 animate-fadeIn">
+              <AlertTriangle className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-400 shrink-0 mt-0.5" />
+              <p className="leading-snug sm:leading-relaxed">
                 {isEn ? activeDay.warningNoticeEn : activeDay.warningNoticeVi}
               </p>
             </div>
@@ -392,26 +392,26 @@ export const ItineraryWeatherCard: React.FC<ItineraryWeatherCardProps> = ({
 
           {/* Smart Cultural Activity Suggestions */}
           {activeDay && (
-            <div className="p-4 rounded-2xl bg-stone-950/80 border border-amber-500/25 space-y-1.5">
-              <div className="flex items-center gap-2 text-xs font-bold text-amber-300">
+            <div className="p-2.5 sm:p-4 rounded-xl sm:rounded-2xl bg-stone-950/80 border border-amber-500/25 space-y-1">
+              <div className="flex items-center gap-1.5 sm:gap-2 text-[11px] sm:text-xs font-bold text-amber-300">
                 <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0" />
                 <span>
-                  {isEn ? 'Smart Activity Recommendations for this Weather:' : 'Gợi Ý Hoạt Động Di Sản Phù Hợp Thời Tiết:'}
+                  {isEn ? 'Weather Activity Tip:' : 'Gợi ý hoạt động theo thời tiết:'}
                 </span>
               </div>
-              <p className="text-xs text-stone-200 leading-relaxed">
+              <p className="text-[11px] sm:text-xs text-stone-200 leading-snug sm:leading-relaxed">
                 {isEn ? activeDay.activitySuggestionEn : activeDay.activitySuggestionVi}
               </p>
             </div>
           )}
 
           {/* Multi-Day Itinerary / Forecast Timeline Bar */}
-          <div className="pt-2">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-[11px] font-bold text-stone-400 uppercase tracking-wider flex items-center gap-1.5">
+          <div className="pt-1 sm:pt-2">
+            <div className="flex items-center justify-between mb-1.5 sm:mb-2">
+              <span className="text-[10px] sm:text-[11px] font-bold text-stone-400 uppercase tracking-wider flex items-center gap-1">
                 <Calendar className="w-3 h-3 text-amber-400" />
                 <span>
-                  {isEn ? 'Daily Forecast for Your Trip:' : 'Dự Báo Từng Ngày Trong Chuyến Đi:'}
+                  {isEn ? 'Trip Forecast:' : 'Dự báo từng ngày:'}
                 </span>
               </span>
 
@@ -420,13 +420,13 @@ export const ItineraryWeatherCard: React.FC<ItineraryWeatherCardProps> = ({
                 onClick={() => setIsExpanded(!isExpanded)}
                 className="text-[11px] text-amber-400 hover:text-amber-300 flex items-center gap-1 font-semibold transition-colors cursor-pointer"
               >
-                <span>{isExpanded ? (isEn ? 'Collapse' : 'Thu gọn') : (isEn ? 'View 7 Days' : 'Xem trọn 7 ngày')}</span>
+                <span>{isExpanded ? (isEn ? 'Collapse' : 'Thu gọn') : (isEn ? 'View 7 Days' : 'Xem 7 ngày')}</span>
                 {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
               </button>
             </div>
 
             {/* Daily Forecast Strip */}
-            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-7 gap-2">
+            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-7 gap-1.5 sm:gap-2">
               {weatherData.daily.slice(0, isExpanded ? 7 : Math.max(3, durationDays)).map((day, idx) => {
                 const isSelected = selectedDayIndex === idx;
                 const isToday = idx === 0;
@@ -436,7 +436,7 @@ export const ItineraryWeatherCard: React.FC<ItineraryWeatherCardProps> = ({
                     key={day.date}
                     type="button"
                     onClick={() => setSelectedDayIndex(idx)}
-                    className={`p-2.5 rounded-2xl border text-center transition-all cursor-pointer flex flex-col items-center justify-between ${
+                    className={`p-2 sm:p-2.5 rounded-xl sm:rounded-2xl border text-center transition-all cursor-pointer flex flex-col items-center justify-between ${
                       isSelected
                         ? 'bg-amber-500/20 border-amber-500/60 shadow-lg shadow-amber-950/40 ring-1 ring-amber-500/40'
                         : 'bg-stone-950/60 border-stone-800/80 hover:bg-stone-800/50 hover:border-stone-700'
@@ -445,15 +445,15 @@ export const ItineraryWeatherCard: React.FC<ItineraryWeatherCardProps> = ({
                     <span className="text-[10px] font-bold text-stone-300 block">
                       {isToday ? (isEn ? 'Today' : 'Hôm nay') : formatDayOfWeek(day.date, language)}
                     </span>
-                    <span className="text-[9px] text-stone-500 block mb-1">
+                    <span className="text-[9px] text-stone-500 block">
                       {formatDateDisplay(day.date, language)}
                     </span>
 
-                    <span className="text-xl my-1 select-none" role="img" aria-label={day.conditionText}>
+                    <span className="text-lg sm:text-xl my-0.5 sm:my-1 select-none" role="img" aria-label={day.conditionText}>
                       {day.conditionIcon}
                     </span>
 
-                    <div className="text-[10px] font-bold text-stone-200 mt-1">
+                    <div className="text-[10px] font-bold text-stone-200">
                       <span>{day.tempMax}°</span>
                       <span className="text-stone-500 font-normal"> / {day.tempMin}°</span>
                     </div>
@@ -470,14 +470,15 @@ export const ItineraryWeatherCard: React.FC<ItineraryWeatherCardProps> = ({
           </div>
 
           {/* Footer Source Credit */}
-          <div className="pt-2 flex items-center justify-between text-[10px] text-stone-400 border-t border-stone-800/60">
-            <span>
-              {isEn ? 'Real-time meteorological model: ' : 'Mô hình khí tượng thực tế: '} 
-              <strong className="text-stone-300">Open-Meteo WMO</strong> ({weatherData.latitude.toFixed(2)}°N, {weatherData.longitude.toFixed(2)}°E)
+          <div className="pt-1.5 sm:pt-2 flex items-center justify-between text-[10px] text-stone-400 border-t border-stone-800/60">
+            <span className="truncate">
+              <span className="hidden sm:inline">{isEn ? 'Real-time meteorological model: ' : 'Mô hình khí tượng thực tế: '}</span>
+              <strong className="text-stone-300">Open-Meteo</strong>
+              <span className="hidden sm:inline"> ({weatherData.latitude.toFixed(2)}°N, {weatherData.longitude.toFixed(2)}°E)</span>
             </span>
-            <span className="text-emerald-400 flex items-center gap-1 font-medium">
+            <span className="text-emerald-400 flex items-center gap-1 font-medium shrink-0">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-              {isEn ? 'Sync active' : 'Đồng bộ thời tiết'}
+              {isEn ? 'Sync active' : 'Đồng bộ'}
             </span>
           </div>
 

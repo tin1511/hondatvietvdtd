@@ -85,12 +85,10 @@ export const CityLandmarkModal: React.FC<CityLandmarkModalProps> = ({
   };
 
   const handleResetDefaults = () => {
-    if (window.confirm('Khôi phục toàn bộ danh sách ảnh nền danh thắng về mặc định ban đầu?')) {
-      const resetList = storageService.resetLandmarkBackgrounds();
-      setLandmarks(resetList);
-      if (resetList.length > 0) {
-        onSelectLandmark(resetList[0]);
-      }
+    const resetList = storageService.resetLandmarkBackgrounds();
+    setLandmarks(resetList);
+    if (resetList.length > 0) {
+      onSelectLandmark(resetList[0]);
     }
   };
 

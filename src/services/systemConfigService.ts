@@ -10,7 +10,7 @@ const SYSTEM_CONFIG_COLLECTION = 'system_config';
 const AI_CONFIG_DOC_ID = 'ai_config';
 const TTS_CONFIG_DOC_ID = 'tts_config';
 const EMAILJS_CONFIG_DOC_ID = 'emailjs_config';
-const HOME_BACKGROUNDS_DOC_ID = 'home_backgrounds';
+const HOME_BACKGROUNDS_DOC_ID = 'home_backgrounds_v3_video';
 
 /**
  * Saves AI configuration to Firebase Firestore and local cache
@@ -319,14 +319,32 @@ export async function loadHomeBackgroundsFromFirebase(): Promise<HomeBackgroundC
     if (docSnap.exists()) {
       const remoteData = docSnap.data();
       if (remoteData?.data && remoteData.data.sections) {
+        const mergedSections = { ...DEFAULT_HOME_BACKGROUNDS.sections };
+        Object.entries(remoteData.data.sections || {}).forEach(([key, val]: [string, any]) => {
+          if (val) {
+            const defSec = DEFAULT_HOME_BACKGROUNDS.sections[key];
+            const shouldInjectDefaultVideo =
+              defSec?.videoUrl &&
+              val.videoUrl === undefined &&
+              val.mediaType !== 'image';
+            mergedSections[key] = {
+              ...(defSec || {}),
+              ...val,
+              ...(shouldInjectDefaultVideo
+                ? {
+                    videoUrl: defSec.videoUrl,
+                    imageUrl: defSec.imageUrl,
+                    mediaType: 'video'
+                  }
+                : {})
+            };
+          }
+        });
         const merged: HomeBackgroundConfig = {
           ...DEFAULT_HOME_BACKGROUNDS,
           ...storageService.getHomeBackgroundConfig(),
           ...remoteData.data,
-          sections: {
-            ...DEFAULT_HOME_BACKGROUNDS.sections,
-            ...(remoteData.data.sections || {})
-          }
+          sections: mergedSections
         };
         storageService.saveHomeBackgroundConfig(merged);
         return merged;
