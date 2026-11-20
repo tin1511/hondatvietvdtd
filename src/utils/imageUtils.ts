@@ -22,29 +22,32 @@ import nhaNhacCungDinh from '../assets/images/nha_nhac_cung_dinh_ai_179022372092
 import quanHoBacNinh from '../assets/images/quan_ho_bac_ninh_ai_1790223735263.jpg';
 import donCaTaiTu from '../assets/images/don_ca_tai_tu_ai_1790223749341.jpg';
 
-export const DEFAULT_HERITAGE_FALLBACK = 'https://images.unsplash.com/photo-1528127269322-539801943592?auto=format&fit=crop&w=1200&q=80';
+export const DEFAULT_HERITAGE_FALLBACK = '/images/heritages/dai-noi-hue.jpg';
 
 export const HERITAGE_PHOTO_MAP: Record<string, string> = {
-  'dai-noi-hue': daiNoiHueAi,
-  'van-mieu-quoc-tu-giam': 'https://upload.wikimedia.org/wikipedia/commons/3/31/Hanoi_Temple_of_Literature.jpg',
-  'pho-co-hoi-an': hoiAnPhoCoAi,
-  'trang-an-ninh-binh': trangAnNinhBinhAi,
-  'chua-thien-mu': 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/88/ThienMuPagoda.jpg/1280px-ThienMuPagoda.jpg',
-  'dinh-doc-lap': 'https://upload.wikimedia.org/wikipedia/commons/thumb/7/7d/20190923_Independence_Palace-10.jpg/1280px-20190923_Independence_Palace-10.jpg',
-  'thanh-dia-my-son': 'https://upload.wikimedia.org/wikipedia/commons/thumb/9/94/A_far_view_of_the_ruins_at_My_Son_%2830992152933%29.jpg/1280px-A_far_view_of_the_ruins_at_My_Son_%2830992152933%29.jpg',
-  'vinh-ha-long': vinhHaLongAi,
-  'phong-nha-ke-bang': 'https://upload.wikimedia.org/wikipedia/commons/4/45/Phongnhacave.jpg',
-  'chua-bai-dinh': 'https://images.unsplash.com/photo-1598977123418-45f04b01d4ec?auto=format&fit=crop&w=1200&q=80',
-  'thap-ba-ponagar': 'https://upload.wikimedia.org/wikipedia/commons/thumb/f/fd/Po_Nagar.jpg/1280px-Po_Nagar.jpg',
-  'fansipan-sapa': 'https://upload.wikimedia.org/wikipedia/commons/thumb/4/42/Amit%C4%81bha_statue_on_Fansipan_1.jpg/1280px-Amit%C4%81bha_statue_on_Fansipan_1.jpg',
-  'cau-vang-bana-hills': 'https://images.unsplash.com/photo-1559592413-7cec4d0cae2b?auto=format&fit=crop&w=1200&q=80',
-  'cho-ben-thanh': choBenThanh,
-  'thac-ban-gioc': thacBanGioc,
-  'nui-ba-den': nuiBaDen,
-  'chua-huong': chuaHuong,
-  'dia-dao-cu-chi': diaDaoCuChi,
-  'mui-ne-poshanu': muiNePoshanu,
-  'phu-quoc-dinh-cau': phuQuocDinhCau
+  'ngu-hanh-son-da-nang': '/images/heritages/ngu-hanh-son-da-nang.jpg',
+  'ma-nhai-ngu-hanh-son': '/images/heritages/ma-nhai-ngu-hanh-son.jpg',
+  'bien-my-khe-da-nang': '/images/heritages/bien-my-khe-da-nang.jpg',
+  'dai-noi-hue': '/images/heritages/dai-noi-hue.jpg',
+  'van-mieu-quoc-tu-giam': '/images/heritages/van-mieu-quoc-tu-giam.jpg',
+  'pho-co-hoi-an': '/images/heritages/pho-co-hoi-an.jpg',
+  'trang-an-ninh-binh': '/images/heritages/trang-an-ninh-binh.jpg',
+  'chua-thien-mu': '/images/heritages/chua-thien-mu.jpg',
+  'dinh-doc-lap': '/images/heritages/dinh-doc-lap.jpg',
+  'thanh-dia-my-son': '/images/heritages/thanh-dia-my-son.jpg',
+  'vinh-ha-long': '/images/heritages/vinh-ha-long.jpg',
+  'phong-nha-ke-bang': '/images/heritages/phong-nha-ke-bang.jpg',
+  'chua-bai-dinh': '/images/heritages/chua-bai-dinh.jpg',
+  'thap-ba-ponagar': '/images/heritages/thap-ba-ponagar.jpg',
+  'fansipan-sapa': '/images/heritages/fansipan-sapa.jpg',
+  'cau-vang-bana-hills': '/images/heritages/cau-vang-bana-hills.jpg',
+  'cho-ben-thanh': '/images/heritages/cho-ben-thanh.jpg',
+  'thac-ban-gioc': '/images/heritages/thac-ban-gioc.jpg',
+  'nui-ba-den': '/images/heritages/nui-ba-den.png',
+  'chua-huong': '/images/heritages/chua-huong.jpg',
+  'dia-dao-cu-chi': '/images/heritages/dia-dao-cu-chi.jpg',
+  'mui-ne-poshanu': '/images/heritages/mui-ne-poshanu.jpg',
+  'phu-quoc-dinh-cau': '/images/heritages/phu-quoc-dinh-cau.jpg'
 };
 
 export const CRAFTS_ARTS_PHOTO_MAP: Record<string, string> = {
@@ -65,19 +68,34 @@ export const CRAFTS_ARTS_PHOTO_MAP: Record<string, string> = {
 };
 
 /**
- * Ensures a reliable, CDN-cached image URL for a heritage site.
- * Filters out blocked / broken Wikimedia thumb hashes.
+ * Ensures a reliable, verified image URL for a heritage site.
+ * Always prioritizes updated/local `/images/...` or explicit custom URLs first,
+ * falling back to HERITAGE_PHOTO_MAP only if url is empty or legacy broken/duplicated.
  */
 export function getSafeHeritageImageUrl(url?: string, heritageId?: string): string {
+  const trimmed = (url || '').trim();
+
+  // Always respect verified local assets (/images/..., data:image/..., or bundled Vite assets)
+  if (trimmed.startsWith('/images/') || trimmed.startsWith('data:image/') || trimmed.startsWith('/assets/')) {
+    return trimmed;
+  }
+
+  // If url is missing or uses the old generic duplicated Unsplash Ha Long photo, use curated map if available
+  const isGenericDuplicate =
+    !trimmed ||
+    trimmed.includes('photo-1528127269322-539801943592') ||
+    trimmed.includes('photo-1509042239860-f550ce710b93') ||
+    trimmed.includes('undefined');
+
+  if (!isGenericDuplicate) {
+    return trimmed;
+  }
+
   if (heritageId && HERITAGE_PHOTO_MAP[heritageId]) {
     return HERITAGE_PHOTO_MAP[heritageId];
   }
 
-  if (!url || url.trim() === '') {
-    return (heritageId && HERITAGE_PHOTO_MAP[heritageId]) || DEFAULT_HERITAGE_FALLBACK;
-  }
-
-  return url;
+  return trimmed || DEFAULT_HERITAGE_FALLBACK;
 }
 
 /**

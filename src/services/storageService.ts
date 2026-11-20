@@ -1573,9 +1573,20 @@ export const storageService = {
 
           const healed = parsed.map((item: HeritageItem) => {
             const def = defaultMap.get(item.id);
-            if (def) {
-              // If image is missing or has blocked /thumb/ URL format
-              if (!item.imageUrl || item.imageUrl.includes('/thumb/') || item.imageUrl.includes('1280px-') || item.imageUrl.includes('undefined')) {
+            if (def && def.imageUrl && def.imageUrl.startsWith('/images/')) {
+              const cur = (item.imageUrl || '').trim();
+              const isStaleOrBroken =
+                !cur ||
+                cur.includes('/thumb/') ||
+                cur.includes('1280px-') ||
+                cur.includes('undefined') ||
+                cur.includes('photo-1528127269322') ||
+                cur.includes('photo-1509042239860') ||
+                cur.includes('photo-1548013146') ||
+                cur.includes('photo-1508804185872') ||
+                cur.includes('upload.wikimedia.org') ||
+                (cur.startsWith('https://images.unsplash.com/') && !cur.includes('?v=custom'));
+              if (isStaleOrBroken) {
                 hasHealed = true;
                 return {
                   ...item,

@@ -35,9 +35,12 @@ import {
   ChevronLeft,
   ChevronRight,
   Edit3,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Loader2,
+  Wand2
 } from 'lucide-react';
 import { storageService, DEFAULT_SITE_LOGO, DEFAULT_HOME_BACKGROUNDS } from '../services/storageService';
+import { aiService } from '../services/aiService';
 import { CommunityContribution, UserProfile, UserActivityLog, HeritageItem, PlaceItem, CityLandmarkBackground, RecognitionSectionConfig, TraditionalCraftVillage, TraditionalArtItem, HomeBackgroundConfig } from '../types';
 import { HeritageEditModal } from './HeritageEditModal';
 import { PlaceEditModal } from './PlaceEditModal';
@@ -174,6 +177,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [userSearchQuery, setUserSearchQuery] = useState('');
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
 
+  // AI Heritage Image Search & Download State
+  const [fetchingHeritageImageId, setFetchingHeritageImageId] = useState<string | null>(null);
+  const [batchImageState, setBatchImageState] = useState<{
+    running: boolean;
+    current: number;
+    total: number;
+    currentName: string;
+    updatedCount: number;
+  } | null>(null);
+  const batchCancelRef = useRef(false);
+
   // Admin login form states
   const [adminUsername, setAdminUsername] = useState('admin');
   const [adminPassword, setAdminPassword] = useState('');
@@ -215,6 +229,79 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   useEffect(() => {
     refreshData();
   }, [activeTab]);
+
+  const handleAIFetchSingleHeritageImage = async (h: HeritageItem) => {
+    setFetchingHeritageImageId(h.id);
+    try {
+      const res = await aiService.fetchHeritageImageWithAI({
+        heritageId: h.id,
+        name: h.name,
+        vietnameseName: h.vietnameseName,
+        englishName: h.englishName,
+        province: h.province,
+        autoSave: true
+      });
+      if (res.success && res.localUrl) {
+        const updatedItem: HeritageItem = { ...h, imageUrl: res.localUrl };
+        await storageService.updateHeritage(updatedItem);
+        setHeritages(prev => prev.map(item => item.id === h.id ? updatedItem : item));
+        setFeedbackMessage(`AI đã tải ảnh "${res.matchedTitle || h.name}" về máy chủ thành công!`);
+        setTimeout(() => setFeedbackMessage(null), 3500);
+      } else {
+        setFeedbackMessage(`Không tìm được ảnh mới cho "${h.name}": ${res.error || 'Vui lòng mở mục Sửa để nhập từ khóa ngắn hơn.'}`);
+        setTimeout(() => setFeedbackMessage(null), 4000);
+      }
+    } finally {
+      setFetchingHeritageImageId(null);
+    }
+  };
+
+  const handleBatchAIFetchHeritageImages = async (onlyMissingOrExternal: boolean) => {
+    const targets = heritages.filter(h => {
+      if (!onlyMissingOrExternal) return true;
+      return !h.imageUrl || !h.imageUrl.startsWith('/images/');
+    });
+    if (targets.length === 0) {
+      setFeedbackMessage('Toàn bộ 100% di sản đều đã có ảnh lưu cục bộ trên máy chủ.');
+      setTimeout(() => setFeedbackMessage(null), 3000);
+      return;
+    }
+    if (!onlyMissingOrExternal && !window.confirm(`Bạn muốn AI quét và tải lại ảnh mới cho toàn bộ ${targets.length} di sản?`)) {
+      return;
+    }
+
+    batchCancelRef.current = false;
+    let updatedCount = 0;
+    setBatchImageState({ running: true, current: 0, total: targets.length, currentName: targets[0].name, updatedCount: 0 });
+
+    const currentList = [...heritages];
+    for (let i = 0; i < targets.length; i++) {
+      if (batchCancelRef.current) break;
+      const item = targets[i];
+      setBatchImageState({ running: true, current: i + 1, total: targets.length, currentName: item.name, updatedCount });
+      const res = await aiService.fetchHeritageImageWithAI({
+        heritageId: item.id,
+        name: item.name,
+        vietnameseName: item.vietnameseName,
+        englishName: item.englishName,
+        province: item.province,
+        autoSave: true
+      });
+      if (res.success && res.localUrl) {
+        updatedCount++;
+        const idx = currentList.findIndex(x => x.id === item.id);
+        if (idx >= 0) {
+          currentList[idx] = { ...currentList[idx], imageUrl: res.localUrl };
+        }
+        setHeritages([...currentList]);
+      }
+    }
+
+    await storageService.saveHeritages(currentList);
+    setBatchImageState(null);
+    setFeedbackMessage(`AI đã tải và cập nhật ảnh đẹp cho ${updatedCount}/${targets.length} di sản!`);
+    setTimeout(() => setFeedbackMessage(null), 4500);
+  };
 
   const handleAdminLogin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1413,7 +1500,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </p>
             </div>
 
-            <div className="flex items-center gap-2.5 shrink-0">
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              <button
+                onClick={() => handleBatchAIFetchHeritageImages(true)}
+                disabled={Boolean(batchImageState?.running)}
+                className="px-3 py-2 rounded-xl bg-emerald-600/20 hover:bg-emerald-600 text-emerald-300 hover:text-white border border-emerald-500/40 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-60"
+                title="AI tự động tìm và tải ảnh cho các di sản chưa có ảnh lưu cục bộ"
+              >
+                {batchImageState?.running ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wand2 className="w-3.5 h-3.5" />}
+                <span>AI Tải Ảnh Thiếu</span>
+              </button>
+
               <button
                 onClick={() => {
                   setEditingHeritage(null);
@@ -1440,6 +1537,23 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </button>
             </div>
           </div>
+
+          {batchImageState?.running && (
+            <div className="p-3 rounded-2xl bg-stone-950 border border-emerald-500/40 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+              <div className="flex items-center gap-2 text-emerald-300 min-w-0">
+                <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                <span className="truncate">
+                  AI đang tìm & tải ảnh ({batchImageState.current}/{batchImageState.total}): <strong>{batchImageState.currentName}</strong> (Đã lưu: {batchImageState.updatedCount})
+                </span>
+              </div>
+              <button
+                onClick={() => { batchCancelRef.current = true; }}
+                className="px-2.5 py-1 rounded-lg bg-red-950/60 hover:bg-red-900 text-red-300 border border-red-500/30 text-[11px] font-semibold shrink-0 cursor-pointer"
+              >
+                Dừng
+              </button>
+            </div>
+          )}
 
           {/* Search bar */}
           <div className="relative">
@@ -1504,7 +1618,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                   <div className="pt-2 border-t border-stone-800 flex items-center justify-between text-xs">
                     <span className="text-[10px] text-stone-500 truncate">ID: {h.id}</span>
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                      <button
+                        onClick={() => handleAIFetchSingleHeritageImage(h)}
+                        disabled={fetchingHeritageImageId === h.id || Boolean(batchImageState?.running)}
+                        className="px-2.5 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-600 text-emerald-300 hover:text-white border border-emerald-500/30 font-bold text-[11px] flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-60"
+                        title="Cho AI tìm & tải ảnh mới phù hợp với tên di sản này"
+                      >
+                        {fetchingHeritageImageId === h.id ? (
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                        ) : (
+                          <Download className="w-3 h-3" />
+                        )}
+                        <span>{fetchingHeritageImageId === h.id ? 'Đang tải...' : 'AI Kiếm Ảnh'}</span>
+                      </button>
+
                       <button
                         onClick={() => {
                           setStoryEditHeritage(h);

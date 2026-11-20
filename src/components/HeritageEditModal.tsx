@@ -14,10 +14,14 @@ import {
   Plus,
   Trash2,
   ExternalLink,
-  Globe
+  Globe,
+  Loader2,
+  Download,
+  Search
 } from 'lucide-react';
 import { HeritageItem, HeritageCategory, Region, VerificationStatus } from '../types';
 import { storageService } from '../services/storageService';
+import { aiService } from '../services/aiService';
 import { languageService, SUPPORTED_LANGUAGES } from '../services/languageService';
 
 interface HeritageEditModalProps {
@@ -109,6 +113,16 @@ export const HeritageEditModal: React.FC<HeritageEditModalProps> = ({
   const [factInput, setFactInput] = useState('');
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isFetchingImage, setIsFetchingImage] = useState(false);
+  const [imageSearchQuery, setImageSearchQuery] = useState('');
+  const [imageCandidates, setImageCandidates] = useState<{
+    url: string;
+    title: string;
+    source: string;
+    width?: number;
+    height?: number;
+  }[]>([]);
+  const [downloadingCandidateUrl, setDownloadingCandidateUrl] = useState<string | null>(null);
 
   useEffect(() => {
     if (heritage) {
@@ -152,12 +166,67 @@ export const HeritageEditModal: React.FC<HeritageEditModalProps> = ({
     setActiveStep(1);
     setSuccessMessage(null);
     setErrorMessage(null);
+    setImageCandidates([]);
+    setImageSearchQuery('');
     setTimeout(() => {
       if (formRef.current) {
         formRef.current.scrollTo({ top: 0, behavior: 'instant' });
       }
     }, 50);
   }, [heritage, isOpen]);
+
+  const handleAIFetchAndDownloadImage = async () => {
+    const queryName = imageSearchQuery.trim() || formData.name?.trim() || formData.vietnameseName?.trim() || '';
+    if (!queryName) {
+      setErrorMessage('Vui lòng nhập tên di sản trước khi cho AI tìm & tải ảnh.');
+      return;
+    }
+    setIsFetchingImage(true);
+    setErrorMessage(null);
+    try {
+      const res = await aiService.fetchHeritageImageWithAI({
+        heritageId: formData.id,
+        name: formData.name || queryName,
+        vietnameseName: formData.vietnameseName,
+        englishName: formData.englishName,
+        province: formData.province,
+        customQuery: imageSearchQuery.trim() || undefined,
+        autoSave: false
+      });
+      if (res.success && res.localUrl) {
+        handleChange('imageUrl', res.localUrl);
+        setImageCandidates(res.candidates || []);
+        setSuccessMessage(`AI đã tìm & tải ảnh "${res.matchedTitle || queryName}" về máy chủ!`);
+        setTimeout(() => setSuccessMessage(null), 4000);
+      } else {
+        setErrorMessage(res.error || 'AI chưa tìm được ảnh phù hợp, vui lòng thử từ khóa ngắn gọn hơn.');
+      }
+    } finally {
+      setIsFetchingImage(false);
+    }
+  };
+
+  const handleSelectAndDownloadCandidate = async (candidateUrl: string, title: string) => {
+    setDownloadingCandidateUrl(candidateUrl);
+    setErrorMessage(null);
+    try {
+      const res = await aiService.fetchHeritageImageWithAI({
+        heritageId: formData.id,
+        name: formData.name || title,
+        selectedImageUrl: candidateUrl,
+        autoSave: false
+      });
+      if (res.success && res.localUrl) {
+        handleChange('imageUrl', res.localUrl);
+        setSuccessMessage(`Đã tải ảnh "${title}" và gắn vào di sản!`);
+        setTimeout(() => setSuccessMessage(null), 3500);
+      } else {
+        setErrorMessage(res.error || 'Không thể tải ảnh đã chọn.');
+      }
+    } finally {
+      setDownloadingCandidateUrl(null);
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -562,25 +631,99 @@ export const HeritageEditModal: React.FC<HeritageEditModalProps> = ({
                   </div>
                 </div>
 
-                <div className="space-y-1">
-                  <label className="font-semibold text-stone-300 flex items-center gap-1.5 text-xs">
-                    <ImageIcon className="w-3.5 h-3.5 text-amber-400" />
-                    <span>Ảnh đại diện Di sản (URL)</span>
-                  </label>
+                <div className="space-y-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <label className="font-semibold text-stone-300 flex items-center gap-1.5 text-xs">
+                      <ImageIcon className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Ảnh đại diện Di sản (URL hoặc AI tự tải về)</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={handleAIFetchAndDownloadImage}
+                      disabled={isFetchingImage}
+                      className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500 text-amber-300 hover:text-[#FFFDF8] border border-amber-500/40 font-bold text-[11px] flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-60"
+                      title="Cho AI tìm ảnh thực tế theo tên di sản và tải trực tiếp về máy chủ"
+                    >
+                      {isFetchingImage ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Sparkles className="w-3.5 h-3.5" />
+                      )}
+                      <span>{isFetchingImage ? 'AI đang tìm & tải ảnh...' : 'AI Tìm & Tải Ảnh'}</span>
+                    </button>
+                  </div>
+
                   <div className="flex gap-2">
                     <input
-                      type="url"
+                      type="text"
                       value={formData.imageUrl || ''}
                       onChange={(e) => handleChange('imageUrl', e.target.value)}
-                      placeholder="https://images.unsplash.com/..."
+                      placeholder="/images/heritages/... hoặc https://..."
                       className="flex-1 bg-stone-950 border border-stone-800 rounded-xl px-3 py-2.5 sm:py-2 text-stone-100 placeholder-stone-600 focus:outline-none focus:border-amber-500 text-xs sm:text-xs"
                     />
                     {formData.imageUrl && (
-                      <div className="w-10 h-10 rounded-xl overflow-hidden border border-stone-700 shrink-0 bg-stone-950">
+                      <div className="w-11 h-11 rounded-xl overflow-hidden border border-stone-700 shrink-0 bg-stone-950">
                         <img src={formData.imageUrl} alt="Preview" className="w-full h-full object-cover" />
                       </div>
                     )}
                   </div>
+
+                  {/* Custom AI image search keyword input */}
+                  <div className="flex items-center gap-2">
+                    <div className="relative flex-1">
+                      <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-stone-500" />
+                      <input
+                        type="text"
+                        value={imageSearchQuery}
+                        onChange={(e) => setImageSearchQuery(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleAIFetchAndDownloadImage();
+                          }
+                        }}
+                        placeholder={`Từ khóa tìm ảnh (mặc định: "${formData.name || 'Tên di sản'}")`}
+                        className="w-full pl-8 pr-3 py-1.5 bg-stone-950/70 border border-stone-800/80 rounded-lg text-[11px] text-stone-200 placeholder-stone-500 focus:outline-none focus:border-amber-500/60"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Candidate thumbnails returned by AI */}
+                  {imageCandidates.length > 0 && (
+                    <div className="p-2.5 rounded-xl bg-stone-950/90 border border-stone-800 space-y-2">
+                      <p className="text-[11px] text-amber-300 font-semibold flex items-center gap-1.5">
+                        <Download className="w-3.5 h-3.5" />
+                        <span>Chọn ảnh khác do AI tìm thấy để tải về máy chủ:</span>
+                      </p>
+                      <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                        {imageCandidates.slice(0, 8).map((cand, idx) => (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={() => handleSelectAndDownloadCandidate(cand.url, cand.title)}
+                            disabled={downloadingCandidateUrl !== null}
+                            className="group relative rounded-lg overflow-hidden border border-stone-800 hover:border-amber-400 bg-stone-900 aspect-[4/3] text-left cursor-pointer transition-all"
+                            title={`${cand.title} (${cand.source})`}
+                          >
+                            <img
+                              src={cand.url}
+                              alt={cand.title}
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                              loading="lazy"
+                            />
+                            <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/40 to-transparent p-1">
+                              <p className="text-[9px] text-stone-200 truncate font-medium">{cand.title}</p>
+                            </div>
+                            {downloadingCandidateUrl === cand.url && (
+                              <div className="absolute inset-0 bg-black/70 flex items-center justify-center">
+                                <Loader2 className="w-4 h-4 text-amber-400 animate-spin" />
+                              </div>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">

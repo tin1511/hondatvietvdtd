@@ -2293,6 +2293,486 @@ Trả về JSON: { "bestImageUrl", "landmarkName", "cityName", "province", "tagl
 });
 
 // ==========================================
+// AI HERITAGE IMAGE SEARCH & LOCAL DOWNLOAD
+// ==========================================
+const HERITAGE_IMAGES_DIR = path.resolve(process.cwd(), 'public', 'images', 'heritages');
+const WIKI_USER_AGENT = 'HonDatVietHeritageApp/1.0 (https://hondatviet.vn; heritage@hondatviet.vn)';
+
+function foldVietnameseForSearch(str: string): string {
+  return (str || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'D')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+const HERITAGE_SEARCH_STOPWORDS = new Set([
+  'di', 'tich', 'lich', 'su', 'quoc', 'gia', 'dac', 'biet', 'danh', 'lam',
+  'thang', 'canh', 'van', 'hoa', 'the', 'gioi', 'unesco', 'khu', 'du', 'quan',
+  'bao', 'ton', 'thien', 'nhien', 'trung', 'tam', 'thanh', 'pho', 'tinh',
+  'va', 'cua', 'tai', 'o', 'nam', 'bo', 'bac', 'viet', 'cong', 'vien',
+  'dia', 'chat', 'toan', 'cau', 'nghe', 'thuat', 'dan', 'gian', 'truyen', 'thong',
+  'of', 'the', 'and', 'in', 'at', 'national', 'park', 'heritage', 'site', 'special'
+]);
+
+function extractHeritageSearchKeywords(str: string): string[] {
+  return foldVietnameseForSearch(str)
+    .split(' ')
+    .filter(w => w.length >= 2 && !HERITAGE_SEARCH_STOPWORDS.has(w));
+}
+
+function cleanHeritageTitleForSearch(raw: string): string {
+  let s = (raw || '').trim();
+  const prefixes = [
+    /^Danh lam thắng cảnh Quốc gia đặc biệt\s+/i,
+    /^Khu di tích Lịch sử Quốc gia đặc biệt\s+/i,
+    /^Khu di tích Quốc gia đặc biệt\s+/i,
+    /^Di tích Lịch sử Quốc gia Đặc biệt\s+/i,
+    /^Di tích Quốc gia đặc biệt\s+/i,
+    /^Di sản Văn hóa Thế giới\s+/i,
+    /^Di sản Thiên nhiên Thế giới\s+/i,
+    /^Di sản Đương đại\s+/i,
+    /^Công viên Địa chất Toàn cầu UNESCO\s+/i,
+    /^Quần thể Di tích và Danh thắng\s+/i,
+    /^Quần thể Di tích Quốc gia đặc biệt\s+/i,
+    /^Quần thể Danh thắng\s+/i,
+    /^Quần thể Di sản Kiến trúc\s+/i,
+    /^Quần thể Tâm linh\s+/i,
+    /^Quần thể Du lịch\s+/i,
+    /^Quần thể Thắng cảnh & Di tích\s+/i,
+    /^Quần thể Di tích\s+/i,
+    /^Khu di tích Lịch sử\s+/i,
+    /^Khu di tích\s+/i,
+    /^Khu du lịch Quốc gia\s+/i,
+    /^Khu bảo tồn thiên nhiên\s+/i,
+    /^Khu bảo tồn đất ngập nước\s+/i,
+    /^Danh thắng\s+/i,
+    /^Danh lam thắng cảnh\s+/i,
+    /^Không gian Văn hóa\s+/i,
+    /^Thành phố Đảo\s+/i,
+  ];
+  for (const p of prefixes) s = s.replace(p, '');
+  s = s.replace(/\s*\([^)]*\)/g, '').trim();
+  if (s.includes('&')) s = s.split('&')[0].trim();
+  if (s.includes('—')) s = s.split('—')[0].trim();
+  if (s.includes(' - ')) s = s.split(' - ')[0].trim();
+  return s;
+}
+
+function isNonPhotoAssetUrl(urlOrTitle: string): boolean {
+  const s = (urlOrTitle || '').toLowerCase();
+  return (
+    s.includes('.svg') ||
+    s.includes('.pdf') ||
+    s.includes('.djvu') ||
+    s.includes('location_map') ||
+    s.includes('relief_map') ||
+    s.includes('relief_location') ||
+    s.includes('blank_map') ||
+    s.includes('flag_of_') ||
+    s.includes('coat_of_arms') ||
+    s.includes('emblem_of_') ||
+    s.includes('commons-logo') ||
+    s.includes('red_pog') ||
+    s.includes('locator') ||
+    s.includes('map_of_')
+  );
+}
+
+function scoreImageCandidate(
+  title: string,
+  url: string,
+  width: number,
+  height: number,
+  keywords: string[],
+  provKeywords: string[],
+  baseBonus: number
+): number {
+  if (isNonPhotoAssetUrl(title) || isNonPhotoAssetUrl(url)) return -999;
+  if (width > 0 && width < 320) return -500;
+  let decodedTail = '';
+  try {
+    decodedTail = decodeURIComponent(url.split('/').pop() || '');
+  } catch {
+    decodedTail = url;
+  }
+  const target = foldVietnameseForSearch(`${title} ${decodedTail}`);
+  let overlap = 0;
+  for (const kw of keywords) {
+    if (target.includes(kw)) overlap++;
+  }
+  let provOverlap = 0;
+  for (const pw of provKeywords) {
+    if (target.includes(pw)) provOverlap++;
+  }
+  const ratio = keywords.length > 0 ? overlap / keywords.length : 0;
+  let score = baseBonus + overlap * 18 + ratio * 35 + provOverlap * 6;
+  if (width >= 800 && width >= height) score += 12;
+  else if (width >= 600) score += 6;
+  if (height > width * 1.6) score -= 8;
+  return score;
+}
+
+function detectImageBufferExt(buf: Buffer): { valid: boolean; ext: string } {
+  if (buf.length < 6000) return { valid: false, ext: '' };
+  if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return { valid: true, ext: 'jpg' };
+  if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return { valid: true, ext: 'png' };
+  if (buf.slice(0, 4).toString('ascii') === 'RIFF' && buf.slice(8, 12).toString('ascii') === 'WEBP') return { valid: true, ext: 'webp' };
+  return { valid: false, ext: '' };
+}
+
+async function downloadVerifiedImageBuffer(imageUrl: string): Promise<{ buf: Buffer; ext: string } | null> {
+  try {
+    const res = await fetch(imageUrl, {
+      headers: { 'User-Agent': WIKI_USER_AGENT },
+      signal: AbortSignal.timeout(18000)
+    });
+    if (!res.ok) return null;
+    const ct = (res.headers.get('content-type') || '').toLowerCase();
+    if (!ct.startsWith('image/')) return null;
+    const buf = Buffer.from(await res.arrayBuffer());
+    const check = detectImageBufferExt(buf);
+    return check.valid ? { buf, ext: check.ext } : null;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchWikiJsonSafe(url: string): Promise<any> {
+  try {
+    const res = await fetch(url, {
+      headers: { 'User-Agent': WIKI_USER_AGENT, Accept: 'application/json' },
+      signal: AbortSignal.timeout(10000)
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+async function gatherHeritageImageCandidates(params: {
+  searchQuery: string;
+  landmarkName: string;
+  province: string;
+  englishName?: string;
+}) {
+  const cleanedName = cleanHeritageTitleForSearch(params.searchQuery || params.landmarkName);
+  const provClean = (params.province || '').replace(/^(Tỉnh|Thành phố|TP\.)\s*/i, '').trim();
+  const keywords = Array.from(new Set([
+    ...extractHeritageSearchKeywords(cleanedName),
+    ...extractHeritageSearchKeywords(params.landmarkName),
+    ...(params.englishName ? extractHeritageSearchKeywords(cleanHeritageTitleForSearch(params.englishName)) : [])
+  ]));
+  const provKeywords = extractHeritageSearchKeywords(provClean);
+
+  const queries = Array.from(new Set([
+    params.searchQuery.trim(),
+    cleanedName,
+    `${cleanedName} ${provClean}`.trim(),
+    params.englishName ? cleanHeritageTitleForSearch(params.englishName) : ''
+  ].filter(q => q && q.length >= 2)));
+
+  const candidates: {
+    url: string;
+    originalUrl?: string;
+    title: string;
+    source: string;
+    width: number;
+    height: number;
+    score: number;
+  }[] = [];
+
+  // 1. Wikipedia VI + EN search + embedded article images
+  for (const lang of ['vi', 'en'] as const) {
+    const q = lang === 'en' && params.englishName ? cleanHeritageTitleForSearch(params.englishName) : queries[0];
+    const url = `https://${lang}.wikipedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(q)}&gsrlimit=5&prop=pageimages|info&piprop=thumbnail|original&pithumbsize=1280&format=json`;
+    const data = await fetchWikiJsonSafe(url);
+    const pages = Object.values(data?.query?.pages || {}) as any[];
+    pages.sort((a, b) => (a.index || 99) - (b.index || 99));
+
+    for (const p of pages) {
+      const src = p.thumbnail?.source || p.original?.source;
+      const w = p.thumbnail?.width || p.original?.width || 0;
+      const h = p.thumbnail?.height || p.original?.height || 0;
+      if (src && !isNonPhotoAssetUrl(src)) {
+        const sc = scoreImageCandidate(p.title || '', src, w, h, keywords, provKeywords, Math.max(0, 20 - (p.index || 1) * 4) + (lang === 'vi' ? 12 : 8));
+        if (sc > 0) {
+          candidates.push({
+            url: src,
+            originalUrl: p.original?.source,
+            title: p.title,
+            source: `${lang === 'vi' ? 'Wikipedia Tiếng Việt' : 'Wikipedia'} (${p.title})`,
+            width: w,
+            height: h,
+            score: sc
+          });
+        }
+      }
+    }
+
+    // Check embedded images of top matching page if needed
+    if (pages.length > 0 && pages[0].pageid) {
+      const imgUrl = `https://${lang}.wikipedia.org/w/api.php?action=query&pageids=${pages[0].pageid}&generator=images&gimlimit=10&prop=imageinfo&iiprop=url|size|mime&iiurlwidth=1280&format=json`;
+      const imgData = await fetchWikiJsonSafe(imgUrl);
+      const imgPages = Object.values(imgData?.query?.pages || {}) as any[];
+      for (const ip of imgPages) {
+        const info = ip.imageinfo?.[0];
+        if (!info || !/^image\/(jpeg|png|webp)/.test(info.mime || '')) continue;
+        const src = info.thumburl || info.url;
+        const w = info.thumbwidth || info.width || 0;
+        const h = info.thumbheight || info.height || 0;
+        if (!src || isNonPhotoAssetUrl(ip.title || '') || isNonPhotoAssetUrl(src)) continue;
+        const sc = scoreImageCandidate(`${pages[0].title} ${ip.title}`, src, w, h, keywords, provKeywords, 8);
+        if (sc > 0) {
+          candidates.push({
+            url: src,
+            originalUrl: info.url,
+            title: String(ip.title || '').replace(/^File:/i, '').replace(/\.[^.]+$/, ''),
+            source: 'Wikipedia Commons Gallery',
+            width: w,
+            height: h,
+            score: sc
+          });
+        }
+      }
+    }
+  }
+
+  // 2. Wikimedia Commons File Search
+  for (const q of queries.slice(0, 2)) {
+    const cmUrl = `https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrnamespace=6&gsrsearch=${encodeURIComponent(q)}&gsrlimit=8&prop=imageinfo&iiprop=url|size|mime&iiurlwidth=1280&format=json`;
+    const cmData = await fetchWikiJsonSafe(cmUrl);
+    const cmPages = Object.values(cmData?.query?.pages || {}) as any[];
+    cmPages.sort((a, b) => (a.index || 99) - (b.index || 99));
+    for (const p of cmPages) {
+      const info = p.imageinfo?.[0];
+      if (!info || !/^image\/(jpeg|png|webp)/.test(info.mime || '')) continue;
+      const src = info.thumburl || info.url;
+      const w = info.thumbwidth || info.width || 0;
+      const h = info.thumbheight || info.height || 0;
+      if (!src || isNonPhotoAssetUrl(p.title || '') || isNonPhotoAssetUrl(src)) continue;
+      const sc = scoreImageCandidate(p.title || '', src, w, h, keywords, provKeywords, 10);
+      if (sc > 0) {
+        candidates.push({
+          url: src,
+          originalUrl: info.url,
+          title: String(p.title || '').replace(/^File:/i, '').replace(/\.[^.]+$/, ''),
+          source: 'Wikimedia Commons',
+          width: w,
+          height: h,
+          score: sc
+        });
+      }
+    }
+    if (candidates.filter(c => c.score >= 55).length >= 3) break;
+  }
+
+  // 3. Gemini with Google Search Grounding (if GEMINI_API_KEY is available)
+  if (process.env.GEMINI_API_KEY && candidates.length < 4) {
+    try {
+      const ai = getGemini();
+      const response = await generateContentWithResilience(ai, {
+        contents: `Tìm đường dẫn ảnh thực tế độ phân giải cao (từ upload.wikimedia.org, commons.wikimedia.org hoặc nguồn ảnh du lịch mở) cho danh thắng Việt Nam: "${params.landmarkName}" tại "${params.province || 'Việt Nam'}". Chỉ trả về JSON: {"searchKeywords": ["..."], "urls": ["https://..."]}`,
+        config: {
+          tools: [{ googleSearch: {} }],
+        }
+      }, AI_MODEL, 5500);
+      const rawText = response?.text || '';
+      const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        if (Array.isArray(parsed.urls)) {
+          for (const u of parsed.urls) {
+            if (typeof u === 'string' && /^https?:\/\//i.test(u) && !isNonPhotoAssetUrl(u)) {
+              candidates.push({
+                url: u,
+                title: `${params.landmarkName} (Google AI Search)`,
+                source: 'Gemini Google Search',
+                width: 1200,
+                height: 800,
+                score: 48
+              });
+            }
+          }
+        }
+        // If Gemini suggested better search keywords and we have few results, run one Commons search with it
+        if (Array.isArray(parsed.searchKeywords) && parsed.searchKeywords[0] && candidates.length < 3) {
+          const extraQ = String(parsed.searchKeywords[0]);
+          const cmUrl = `https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrnamespace=6&gsrsearch=${encodeURIComponent(extraQ)}&gsrlimit=6&prop=imageinfo&iiprop=url|size|mime&iiurlwidth=1280&format=json`;
+          const cmData = await fetchWikiJsonSafe(cmUrl);
+          const cmPages = Object.values(cmData?.query?.pages || {}) as any[];
+          for (const p of cmPages) {
+            const info = p.imageinfo?.[0];
+            if (!info || !/^image\/(jpeg|png|webp)/.test(info.mime || '')) continue;
+            const src = info.thumburl || info.url;
+            if (src && !isNonPhotoAssetUrl(src)) {
+              candidates.push({
+                url: src,
+                originalUrl: info.url,
+                title: String(p.title || '').replace(/^File:/i, '').replace(/\.[^.]+$/, ''),
+                source: 'Gemini + Wikimedia Commons',
+                width: info.thumbwidth || info.width || 1200,
+                height: info.thumbheight || info.height || 800,
+                score: 50
+              });
+            }
+          }
+        }
+      }
+    } catch {
+      // Non-fatal: Wiki + Commons candidates remain available
+    }
+  }
+
+  const seen = new Set<string>();
+  return candidates
+    .filter(c => {
+      if (!c.url || seen.has(c.url)) return false;
+      seen.add(c.url);
+      return true;
+    })
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 8);
+}
+
+app.post('/api/ai/fetch-heritage-image', async (req: Request, res: Response) => {
+  try {
+    const {
+      heritageId = '',
+      name = '',
+      vietnameseName = '',
+      englishName = '',
+      province = '',
+      customQuery = '',
+      selectedImageUrl = '',
+      searchOnly = false,
+      autoSave = true
+    } = req.body || {};
+
+    const displayTitle = customQuery || vietnameseName || name;
+    if (!displayTitle && !selectedImageUrl) {
+      return res.status(400).json({ success: false, error: 'Vui lòng cung cấp tên di sản hoặc đường dẫn ảnh.' });
+    }
+
+    fs.mkdirSync(HERITAGE_IMAGES_DIR, { recursive: true });
+    const rawSlug = (heritageId || foldVietnameseForSearch(displayTitle).replace(/\s+/g, '-')).replace(/[^a-zA-Z0-9_-]/g, '');
+    const safeSlug = rawSlug || `heritage-${Date.now()}`;
+
+    const saveBufferLocally = (buf: Buffer, ext: string): string => {
+      const filename = `${safeSlug}-${Date.now().toString(36)}.${ext}`;
+      const targetPath = path.join(HERITAGE_IMAGES_DIR, filename);
+      fs.writeFileSync(targetPath, buf);
+      return `/images/heritages/${filename}`;
+    };
+
+    const persistToServerHeritages = (localUrl: string) => {
+      if (autoSave && heritageId && Array.isArray(serverHeritages)) {
+        let updated = false;
+        serverHeritages = serverHeritages.map((item: any) => {
+          if (item.id === heritageId) {
+            updated = true;
+            return { ...item, imageUrl: localUrl };
+          }
+          return item;
+        });
+        if (updated) {
+          writeServerHeritages(serverHeritages);
+        }
+      }
+    };
+
+    // Mode 1: Download a specifically chosen candidate URL to local server
+    if (selectedImageUrl) {
+      if (selectedImageUrl.startsWith('/images/')) {
+        persistToServerHeritages(selectedImageUrl);
+        return res.json({ success: true, localUrl: selectedImageUrl, sourceUrl: selectedImageUrl });
+      }
+      const downloaded = await downloadVerifiedImageBuffer(selectedImageUrl);
+      if (!downloaded) {
+        return res.status(400).json({ success: false, error: 'Không thể tải ảnh từ đường dẫn này. Vui lòng chọn ảnh khác.' });
+      }
+      const localUrl = saveBufferLocally(downloaded.buf, downloaded.ext);
+      persistToServerHeritages(localUrl);
+      return res.json({
+        success: true,
+        localUrl,
+        sourceUrl: selectedImageUrl,
+        message: `Đã tải và lưu ảnh về máy chủ (${localUrl})`
+      });
+    }
+
+    // Mode 2: Search candidates for this landmark
+    const candidates = await gatherHeritageImageCandidates({
+      searchQuery: displayTitle,
+      landmarkName: name || vietnameseName || customQuery,
+      province,
+      englishName
+    });
+
+    if (candidates.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: `Không tìm thấy ảnh phù hợp cho "${displayTitle}". Bạn có thể thử từ khóa ngắn gọn hơn.`
+      });
+    }
+
+    if (searchOnly) {
+      return res.json({
+        success: true,
+        candidates: candidates.map(c => ({
+          url: c.url,
+          originalUrl: c.originalUrl,
+          title: c.title,
+          source: c.source,
+          width: c.width,
+          height: c.height,
+          score: Math.round(c.score)
+        }))
+      });
+    }
+
+    // Auto-download the top valid candidate onto local server
+    for (const cand of candidates.slice(0, 5)) {
+      const dl = (await downloadVerifiedImageBuffer(cand.url)) ||
+        (cand.originalUrl ? await downloadVerifiedImageBuffer(cand.originalUrl) : null);
+      if (dl) {
+        const localUrl = saveBufferLocally(dl.buf, dl.ext);
+        persistToServerHeritages(localUrl);
+        return res.json({
+          success: true,
+          localUrl,
+          sourceUrl: cand.url,
+          matchedTitle: cand.title,
+          source: cand.source,
+          candidates: candidates.map(c => ({
+            url: c.url,
+            title: c.title,
+            source: c.source,
+            width: c.width,
+            height: c.height,
+            score: Math.round(c.score)
+          }))
+        });
+      }
+    }
+
+    return res.status(502).json({
+      success: false,
+      error: 'Tìm thấy ứng viên ảnh nhưng máy chủ nguồn từ chối tải xuống. Vui lòng thử lại.',
+      candidates
+    });
+  } catch (err: any) {
+    console.error('Error in /api/ai/fetch-heritage-image:', err);
+    return res.status(500).json({ success: false, error: err?.message || 'Lỗi tìm kiếm và tải ảnh di sản.' });
+  }
+});
+
+// ==========================================
 // AI TOUR GUIDE TRAINING & CONFIGURATION
 // ==========================================
 app.get('/api/ai/tour-guide-config', (req: Request, res: Response) => {
@@ -3439,6 +3919,11 @@ app.post('/api/tts/vieneu', async (req: Request, res: Response) => {
 // 9. VITE SPA FALLBACK & STATIC SERVING
 // ==========================================
 async function startServer() {
+  // Always serve dynamically downloaded heritage images from public/images/heritages in both dev & prod
+  const heritageImagesStaticDir = path.resolve(process.cwd(), 'public', 'images', 'heritages');
+  fs.mkdirSync(heritageImagesStaticDir, { recursive: true });
+  app.use('/images/heritages', express.static(heritageImagesStaticDir, { maxAge: '7d' }));
+
   if (process.env.NODE_ENV !== 'production') {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({

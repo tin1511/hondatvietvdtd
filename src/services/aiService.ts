@@ -1068,5 +1068,57 @@ export const aiService = {
         reason: 'Ảnh ẩm thực đặc sản chất lượng cao.'
       };
     }
+  },
+
+  /**
+   * AI Search & Download Authentic Heritage Photo to Local Server (/images/heritages/...)
+   */
+  async fetchHeritageImageWithAI(params: {
+    heritageId?: string;
+    name: string;
+    vietnameseName?: string;
+    englishName?: string;
+    province?: string;
+    customQuery?: string;
+    selectedImageUrl?: string;
+    searchOnly?: boolean;
+    autoSave?: boolean;
+  }): Promise<{
+    success: boolean;
+    localUrl?: string;
+    sourceUrl?: string;
+    matchedTitle?: string;
+    source?: string;
+    error?: string;
+    candidates?: {
+      url: string;
+      originalUrl?: string;
+      title: string;
+      source: string;
+      width?: number;
+      height?: number;
+      score?: number;
+    }[];
+  }> {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 30000);
+      const res = await fetch('/api/ai/fetch-heritage-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params),
+        signal: controller.signal
+      });
+      clearTimeout(timer);
+      const data = await res.json();
+      return data;
+    } catch (err: any) {
+      return {
+        success: false,
+        error: err?.name === 'AbortError'
+          ? 'Quá thời gian tìm kiếm ảnh. Vui lòng thử lại.'
+          : (err?.message || 'Không thể kết nối máy chủ để tìm & tải ảnh.')
+      };
+    }
   }
 };
