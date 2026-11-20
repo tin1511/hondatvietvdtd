@@ -82,6 +82,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     { id: 'learning', label: languageService.t('nav.learning', language, 'Quiz & Lịch sử'), icon: Award },
     { id: 'profile', label: languageService.t('nav.profile', language, 'Hồ sơ & Danh hiệu'), icon: Award, badge: 'XP' },
     { id: 'community', label: languageService.t('nav.community', language, 'Cộng đồng'), icon: Users },
+    { id: 'admin', label: languageService.t('nav.admin', language, 'Quản trị Hệ thống'), icon: ShieldCheck, badge: 'Admin' },
   ];
 
   return (
@@ -151,19 +152,37 @@ export const Navbar: React.FC<NavbarProps> = ({
             
             {/* 1. Authentication / Profile Status Button */}
             {userProfile.isLoggedIn ? (
-              <button
-                id="btn-profile"
-                data-guide-id="nav.user"
-                data-guide-type="ui"
-                onClick={() => onSelectTab('profile')}
-                className="flex items-center gap-1 px-2 py-1 sm:px-3 sm:py-1.5 rounded-xl bg-[var(--bg)] hover:bg-[#F3E5CD] border border-[var(--gold)] transition-all shrink-0 cursor-pointer"
-                title={`Tài khoản: ${userProfile.displayName}`}
-              >
-                <User className="w-3.5 h-3.5 text-[var(--primary)] shrink-0" />
-                <span className="text-[11px] sm:text-xs font-semibold text-[var(--text)] truncate max-w-[68px] xs:max-w-[90px] sm:max-w-[165px]">
-                  {userProfile.displayName}
-                </span>
-              </button>
+              <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+                {userProfile.role === 'admin' && (
+                  <button
+                    id="btn-admin-quick"
+                    type="button"
+                    onClick={() => onSelectTab('admin')}
+                    className={`flex items-center gap-1 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl border text-[11px] sm:text-xs font-extrabold transition-all shrink-0 cursor-pointer shadow-sm ${
+                      currentTab === 'admin'
+                        ? 'bg-[var(--primary)] text-[#FFFDF8] border-[var(--gold)]'
+                        : 'bg-[#FCEAE8] hover:bg-[var(--primary)] text-[var(--primary)] hover:text-[#FFFDF8] border-[var(--primary)]/40'
+                    }`}
+                    title="Mở Bảng Điều Khiển Quản Trị Hệ Thống"
+                  >
+                    <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+                    <span>{language === 'en' ? 'Admin Panel' : 'Bảng Quản Trị'}</span>
+                  </button>
+                )}
+                <button
+                  id="btn-profile"
+                  data-guide-id="nav.user"
+                  data-guide-type="ui"
+                  onClick={() => onSelectTab('profile')}
+                  className="flex items-center gap-1 px-2 py-1 sm:px-3 sm:py-1.5 rounded-xl bg-[var(--bg)] hover:bg-[#F3E5CD] border border-[var(--gold)] transition-all shrink-0 cursor-pointer"
+                  title={`Tài khoản: ${userProfile.displayName}`}
+                >
+                  <User className="w-3.5 h-3.5 text-[var(--primary)] shrink-0" />
+                  <span className="text-[11px] sm:text-xs font-semibold text-[var(--text)] truncate max-w-[68px] xs:max-w-[90px] sm:max-w-[165px]">
+                    {userProfile.displayName}
+                  </span>
+                </button>
+              </div>
             ) : (
               <div className="flex items-center gap-1 shrink-0" data-guide-id="nav.user" data-guide-type="ui">
                 <button

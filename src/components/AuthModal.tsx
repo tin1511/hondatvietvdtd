@@ -151,9 +151,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setActivities(storageService.getActivities(res.user.id));
     setSuccessMessage(`Chào mừng trở lại, ${res.user.displayName}!`);
     setTimeout(() => {
-      setActiveTab('profile');
       setSuccessMessage('');
-    }, 800);
+      if (res.user?.role === 'admin' && onNavigateTab) {
+        onNavigateTab('admin');
+        onClose();
+      } else {
+        setActiveTab('profile');
+      }
+    }, 600);
   };
 
   const handleRegister = (e: React.FormEvent) => {
@@ -748,6 +753,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
               {/* Action Buttons */}
               <div className="pt-2 flex flex-wrap gap-2">
+                {currentUser.role === 'admin' && onNavigateTab && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onNavigateTab('admin');
+                      onClose();
+                    }}
+                    className="w-full py-3 px-4 rounded-xl bg-[var(--primary)] hover:bg-[var(--primary-hover)] text-[#FFFDF8] text-xs sm:text-sm font-extrabold flex items-center justify-center gap-2 border border-[var(--gold)] shadow-md transition-all cursor-pointer"
+                  >
+                    <ShieldCheck className="w-4 h-4 text-[#FFFDF8]" />
+                    <span>Mở Bảng Quản Trị Hệ Thống</span>
+                  </button>
+                )}
+
                 <button
                   onClick={() => setActiveTab('security')}
                   className="flex-1 py-2.5 px-4 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 text-xs font-semibold flex items-center justify-center gap-2 border border-amber-500/30 transition-colors"

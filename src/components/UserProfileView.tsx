@@ -424,6 +424,40 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
         </div>
       )}
 
+      {/* Admin Quick Access Banner when logged in as Administrator */}
+      {(currentUser.role === 'admin' || currentUser.id === 'user-admin') && (
+        <div className="mb-5 p-4 sm:p-5 rounded-2xl bg-[var(--surface)] border-2 border-[var(--primary)]/50 shadow-[0_8px_24px_rgba(179,38,30,0.12)] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="flex items-start sm:items-center gap-3.5">
+            <div className="w-11 h-11 rounded-2xl bg-[var(--primary)] text-[#FFFDF8] flex items-center justify-center shrink-0 shadow-md border border-[var(--gold)]">
+              <ShieldCheck className="w-6 h-6" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="font-serif font-bold text-base sm:text-lg text-[var(--primary)]">
+                  Trung Tâm Quản Trị & Kiểm Định Hệ Thống
+                </h3>
+                <span className="text-[10px] px-2 py-0.5 rounded-md bg-[#FCEAE8] text-[var(--primary)] border border-[var(--primary)]/30 font-extrabold uppercase tracking-wider">
+                  Admin Full Access
+                </span>
+              </div>
+              <p className="text-xs text-[var(--text-muted)] mt-0.5">
+                Quản lý Di sản 34 tỉnh thành, Quán ăn & Địa điểm, Ảnh/Video nền trang chủ, Tài khoản người dùng, Cấu hình AI & Giọng nói.
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => onNavigateTab('admin')}
+            className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-[var(--primary)] hover:bg-[var(--primary-hover)] text-[#FFFDF8] font-extrabold text-xs sm:text-sm shadow-md border border-[var(--gold)] flex items-center justify-center gap-2 transition-all active:scale-95 cursor-pointer shrink-0"
+          >
+            <ShieldCheck className="w-4 h-4" />
+            <span>Mở Bảng Quản Trị Hệ Thống</span>
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {/* =========================================================
           TOP TAB NAVIGATION BAR (ALWAYS FIRST & IMMEDIATELY VISIBLE UPON OPENING)
           ========================================================= */}
@@ -492,6 +526,16 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
             >
               <KeyRound className="w-4 h-4" />
               <span>{currentUser.isLoggedIn ? languageService.t('profile.securityTab', language, 'Bảo Mật') : languageService.t('nav.login', language, 'Đăng Nhập')}</span>
+            </button>
+
+            <button
+              id="tab-btn-admin-console"
+              type="button"
+              onClick={() => onNavigateTab('admin')}
+              className="px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-extrabold transition-all flex items-center gap-1.5 sm:gap-2 whitespace-nowrap cursor-pointer bg-[var(--primary)] hover:bg-[var(--primary-hover)] text-[#FFFDF8] border border-[var(--gold)] shadow-sm"
+            >
+              <ShieldCheck className="w-4 h-4 text-[#FFFDF8]" />
+              <span>{language === 'en' ? 'Admin Console' : 'Quản Trị Hệ Thống'}</span>
             </button>
           </div>
 

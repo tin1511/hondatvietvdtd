@@ -6,7 +6,6 @@ import dotenv from 'dotenv';
 import { Resend } from 'resend';
 import nodemailer from 'nodemailer';
 import { GoogleGenAI, Type, ThinkingLevel } from '@google/genai';
-import { createServer as createViteServer } from 'vite';
 import { HERITAGE_DATABASE } from './src/data/vietnamHeritageData';
 import { VIETNAM_LANDMARK_PHOTOS } from './src/data/landmarkImagesDatabase';
 
@@ -3441,6 +3440,7 @@ app.post('/api/tts/vieneu', async (req: Request, res: Response) => {
 // ==========================================
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: {
         middlewareMode: true,
